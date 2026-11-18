@@ -862,61 +862,51 @@ def _scene_9(W, H, seed):
 
 
 def _scene_10(W, H, seed):
-    """Wooden judge gavel and court table close-up, thin depth of
-    field, window light."""
-    arr = _vgrad(W, H, [(0.0, (0.20, 0.17, 0.13)),
-                        (0.6, (0.32, 0.27, 0.20)),
-                        (1.0, (0.12, 0.10, 0.08))])
-    # window light, top-left
-    _add_glow(arr, W * 0.18, H * 0.15, W * 0.30, (1.0, 0.9, 0.7), 0.55)
-    img = _pil(arr)
-    img = img.filter(ImageFilter.GaussianBlur(max(1, H // 10)))
-    img = img.convert("RGBA")
-    # window frame, softly blurred
-    d = ImageDraw.Draw(img)
-    d.rectangle([int(W * 0.06), int(H * 0.04), int(W * 0.30), int(H * 0.55)],
-                fill=(235, 215, 170, 200))
-    d.line([(int(W * 0.18), int(H * 0.04)), (int(W * 0.18), int(H * 0.55))],
-           fill=(90, 70, 50, 200), width=2)
-    img = img.filter(ImageFilter.GaussianBlur(max(1, H // 16)))
-    d = ImageDraw.Draw(img)
-    # table: polished dark wood
-    ty = int(H * 0.62)
-    d.rectangle([0, ty, W, H], fill=(58, 38, 24, 255))
-    d.rectangle([0, ty, W, ty + 2], fill=(150, 105, 60, 255))
+    """Airport apron at dusk: a parked jet, control tower, runway
+    lights, soft haze. (Card 10 is now the EU air-safety list.)"""
+    arr = _vgrad(W, H, [(0.0, (0.35, 0.45, 0.62)),
+                        (0.55, (0.62, 0.58, 0.55)),
+                        (1.0, (0.25, 0.24, 0.28))])
+    _add_glow(arr, W * 0.78, H * 0.30, W * 0.28, (1.0, 0.75, 0.45), 0.5)
+    _clouds(arr, seed + 7, cover=0.35, soft=0.22,
+            color=(0.95, 0.9, 0.85))
+    _haze(arr, (0.75, 0.72, 0.68), 0.25, y0=0.45, y1=0.85)
+    img = _pil(arr).convert("RGBA")
     layer, d = _soft_layer(W, H)
-    # sounding block
-    bx, by = int(W * 0.42), int(H * 0.74)
-    br = int(W * 0.11)
-    d.ellipse([bx - br, by - br // 3, bx + br, by + br // 3],
-              fill=(96, 62, 34, 255))
-    d.ellipse([bx - br, by - br // 3, bx + br, by - br // 3 + 3],
-              fill=(140, 95, 55, 255))
-    # gavel: head + handle, diagonal, warm wood lit by the window
-    hx, hy = bx, by - int(H * 0.06)
-    ang = np.deg2rad(-18)
-    ca, sa = np.cos(ang), np.sin(ang)
-    def rot(px, py):
-        return (hx + px * ca - py * sa, hy + px * sa + py * ca)
-    hw, hh = int(W * 0.16), int(H * 0.20)
-    head = [rot(-hw, -hh), rot(hw, -hh), rot(hw, hh), rot(-hw, hh)]
-    d.polygon(head, fill=(168, 118, 66, 255))
-    d.polygon([rot(-hw, -hh), rot(hw, -hh), rot(hw, -hh + 4),
-               rot(-hw, -hh + 4)], fill=(222, 168, 104, 255))
-    # handle
-    hl = int(W * 0.32)
-    d.polygon([rot(hw - 4, -4), rot(hw + hl, -4), rot(hw + hl, 4),
-               rot(hw - 4, 4)], fill=(140, 96, 54, 255))
-    # wood grain streaks on the head
-    for t in (-0.5, 0.0, 0.5):
-        p0 = rot(-hw + 3, int(hh * t))
-        p1 = rot(hw - 3, int(hh * t))
-        d.line([p0, p1], fill=(90, 58, 30, 160), width=1)
-    img = _paste_soft(img, layer, blur=0.6)
-    img = _shadow(img, (bx - br, by + br // 4, bx + br, by + br // 2),
-                  blur=3, alpha=100)
+    # control tower, left
+    tx = int(W * 0.10)
+    d.rectangle([tx, int(H * 0.30), tx + int(W * 0.03), int(H * 0.72)],
+                fill=(70, 72, 78, 255))
+    d.rectangle([tx - int(W * 0.02), int(H * 0.22), tx + int(W * 0.05),
+                 int(H * 0.32)], fill=(90, 95, 105, 255))
+    d.rectangle([tx - int(W * 0.01), int(H * 0.25), tx + int(W * 0.04),
+                 int(H * 0.29)], fill=(180, 200, 220, 255))
+    # parked jet, side profile, centre-right
+    jx, jy = int(W * 0.52), int(H * 0.58)
+    fw, fh = int(W * 0.30), int(H * 0.05)
+    d.ellipse([jx - fw, jy - fh, jx + fw, jy + fh], fill=(215, 215, 218, 255))
+    d.polygon([(jx + fw * 0.55, jy - fh), (jx + fw * 0.95, jy - fh * 2.6),
+               (jx + fw * 0.98, jy - fh * 2.6), (jx + fw * 0.75, jy - fh)],
+              fill=(190, 190, 195, 255))
+    d.polygon([(jx - fw * 0.75, jy), (jx - fw * 0.95, jy + fh * 1.8),
+               (jx - fw * 0.85, jy + fh * 1.8), (jx - fw * 0.6, jy + fh)],
+              fill=(190, 190, 195, 255))
+    d.polygon([(jx - fw * 0.1, jy + fh), (jx + fw * 0.1, jy + fh),
+               (jx + fw * 0.16, jy + fh * 2.4),
+               (jx - fw * 0.16, jy + fh * 2.4)], fill=(180, 180, 185, 255))
+    for k in range(6):
+        wx = jx - fw * 0.55 + k * int(fw * 0.18)
+        d.ellipse([wx, jy - fh * 0.45, wx + 2, jy - fh * 0.45 + 2],
+                  fill=(40, 60, 90, 255))
+    # tarmac + runway lights
+    d.rectangle([0, int(H * 0.72), W, H], fill=(45, 46, 50, 255))
+    for k in range(9):
+        lx = int(W * (0.04 + 0.11 * k))
+        d.ellipse([lx, int(H * 0.78), lx + 3, int(H * 0.78) + 3],
+                  fill=(255, 190, 90, 255))
+    img = _paste_soft(img, layer, blur=0.8)
     arr = _np(img.convert("RGB"))
-    _add_glow(arr, W * 0.42, H * 0.68, W * 0.14, (1.0, 0.85, 0.6), 0.3)
+    _add_glow(arr, W * 0.78, H * 0.30, W * 0.16, (1.0, 0.8, 0.5), 0.3)
     return _finish(arr, seed)
 
 

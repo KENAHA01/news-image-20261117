@@ -66,6 +66,7 @@ and 1 MiB). The 2048x2048 render is a separate preview file
 the submitted file.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -290,24 +291,61 @@ def draw_tag(d, x, y, w, text, color, group, start=9, max_h=20):
 PIN_LONLAT = {
     1: (36.5, 47.0), 2: (60.0, 30.0), 3: (121.0, 14.6), 4: (25.0, -2.0),
     5: (24.0, 41.0), 6: (-98.0, 39.0), 7: (-128.0, 42.0),
-    8: (32.0, 31.5), 9: (139.7, 35.7), 10: (2.3, 48.9),
+    8: (32.0, 31.5), 9: (139.7, 35.7), 10: (4.35, 50.85),
     11: (-116.0, 33.0), 12: (48.5, 22.5), 13: (116.4, 39.9),
     14: (106.9, 47.9), 15: (86.1, 55.4),
 }
 
+# Small dots for the list stories (16-34). Voyager 1 (id 27) is in
+# deep space and has no Earth location, so it gets no dot.
+DOT_LONLAT = {
+    16: (35.5, 33.8), 17: (56.2, 26.2), 18: (-74.0, 40.7),
+    19: (-121.9, 37.4), 20: (55.3, 25.2), 21: (44.5, 13.0),
+    22: (35.2, 31.9), 23: (114.0, 22.5), 24: (32.6, -25.9),
+    25: (-80.6, 28.4), 26: (-160.0, -10.0), 28: (32.5, 15.6),
+    29: (35.2, 31.8), 30: (28.9, 47.0), 31: (90.35, 23.85),
+    32: (2.3, 48.9), 33: (78.0, 30.3), 34: (90.45, 23.75),
+}
+
 PIN_CENTERS = []
+
+# Robinson projection table (Snyder): X and Y for |lat| in 5-degree
+# steps from 0 to 90. x = 0.8487 * R * lambda * X, y = 1.3523 * R * Y.
+_ROB_X = [1.0000, 0.9986, 0.9954, 0.9900, 0.9822, 0.9730, 0.9600,
+          0.9427, 0.9216, 0.8962, 0.8679, 0.8350, 0.7986, 0.7597,
+          0.7186, 0.6732, 0.6213, 0.5722, 0.5322]
+_ROB_Y = [0.0000, 0.0620, 0.1240, 0.1860, 0.2480, 0.3100, 0.3720,
+          0.4340, 0.4958, 0.5571, 0.6176, 0.6769, 0.7346, 0.7903,
+          0.8435, 0.8936, 0.9394, 0.9761, 1.0000]
+
+
+def _robinson_xy(lon, lat):
+    """Robinson projection in unit-radius coordinates."""
+    import math
+    a = abs(lat)
+    i = min(17, int(a // 5))
+    f = (a - i * 5) / 5
+    xfac = _ROB_X[i] + f * (_ROB_X[i + 1] - _ROB_X[i])
+    yfac = _ROB_Y[i] + f * (_ROB_Y[i + 1] - _ROB_Y[i])
+    x = 0.8487 * math.radians(lon) * xfac
+    y = 1.3523 * yfac * (1 if lat >= 0 else -1)
+    return x, y
 
 
 def draw_world_map(img, d, x, y, w, h):
     """World map on its own layer (so coastline outside the box is
-    clipped), from Natural Earth 110m land data, equirectangular
-    projection lon -180..180, lat 85..-60. Pins sit on real lon/lat
-    and are coloured by their story's region."""
+    clipped), from Natural Earth 110m land data, Robinson projection.
+    The Robinson x/y range is stretched to fill the panel. Pins sit on
+    real lon/lat and are coloured by their story's region; the list
+    stories (16-34) get a small dot in their region colour."""
     layer = Image.new("RGB", (sc(w), sc(h)), SEA)
     ld = ScaledDraw(ImageDraw.Draw(layer))
 
     def proj(lon, lat):
-        return ((lon + 180) / 360 * w, (85 - lat) / 145 * h)
+        rx, ry = _robinson_xy(lon, lat)
+        # x: lon +-180 at the equator spans +-2.666 units.
+        # y: lat 85 -> 1.320, lat -60 -> -0.993.
+        return ((rx + 2.666) / 5.332 * w, (1.320 - ry) / 2.313 * h)
 
     for poly in LAND_POLYS:
         pts = [proj(lon, lat) for lon, lat in poly]
@@ -324,6 +362,12 @@ def draw_world_map(img, d, x, y, w, h):
         t = str(num)
         tw = d.textlength(t, font=f)
         d.text((px - tw / 2, py - 6), t, font=f, fill=(255, 255, 255))
+    for num, (lon, lat) in DOT_LONLAT.items():
+        px, py = x + proj(lon, lat)[0], y + proj(lon, lat)[1]
+        region = STORIES[num - 1]["region"]
+        col = REGION_COLORS[region]
+        d.ellipse([px - 3, py - 3, px + 3, py + 3], fill=col, outline=INK,
+                  width=1)
 
 
 # ---- Stage 1: one data list, 39 unique stories ----
@@ -334,10 +378,10 @@ REGIONS = ["EUROPE", "MIDDLE EAST", "ASIA", "AFRICA", "AMERICAS",
 STORIES = [
     {"id": 1, "region": "EUROPE",
      "title": "Part of the Crimea bridge roadway plunges into the sea",
-     "summary": "Struck a second day in a row. Kyiv calls it a first of its "
-     "kind; Moscow promises a rebuild.",
+     "summary": "Ukraine hit it a second day in a row. Kyiv calls it a first; "
+     "Moscow vows a rebuild.",
      "status": "CONFIRMED", "event": "kerch-bridge",
-     "cat": "EUROPE - UKRAINE WAR", "scene": "kerch", "source": "R",
+     "cat": "EUROPE - UKRAINE WAR", "scene": "kerch", "source": "Reuters",
      "caption": "The strait that joins Crimea and Russia",
      "tag": "CONFIRMED: Reuters-checked footage shows the span down."},
     {"id": 2, "region": "MIDDLE EAST",
@@ -345,16 +389,16 @@ STORIES = [
      "summary": "A missile site on Qeshm was hit; 24 crew were taken off the "
      "burning Tara Gas.",
      "status": "CLAIM", "event": "us-strikes-iran",
-     "cat": "MIDDLE EAST - IRAN WAR", "scene": "gulf", "source": "AP",
+     "cat": "MIDDLE EAST - IRAN WAR", "scene": "gulf", "source": "Reuters",
      "caption": "The strait that runs between Iran and Oman",
      "tag": "CLAIM: Iran blames mines in Hormuz for the tanker hits - not "
      "checked on its own."},
     {"id": 3, "region": "ASIA",
-     "title": "Trump gathers the Quad in Manila for the first time",
+     "title": "Trump's first Quad summit of his new term, in Manila",
      "summary": "The first Quad gathering of his new term; Xi and Putin are "
      "next, in China on Thursday.",
      "status": "none", "event": "quad-summit-manila",
-     "cat": "ASIA - DIPLOMACY", "scene": "quad", "source": "AP",
+     "cat": "ASIA - DIPLOMACY", "scene": "quad", "source": "Reuters",
      "map_h": 32,
      "caption": "Manila, where ASEAN and the Quad both met",
      "caption2": "Leading the Quad: Trump, Modi, Takaichi, Albanese."},
@@ -364,10 +408,10 @@ STORIES = [
      "status": "none", "event": "ebola-dr-congo",
      "cat": "AFRICA - HEALTH", "scene": "ebola", "source": "WHO"},
     {"id": 5, "region": "WORLD",
-     "title": "Antalya climate talks reach a first draft",
-     "summary": "An opening text is on the table; talks end Friday.",
+     "title": "Antalya talks weigh a first draft",
+     "summary": "Delegates weigh the opening text; talks end Friday.",
      "status": "none", "event": "cop31-talks",
-     "cat": "WORLD - CLIMATE", "scene": "cop31", "source": "AP"},
+     "cat": "WORLD - CLIMATE", "scene": "cop31", "source": "Reuters"},
     {"id": 6, "region": "AMERICAS",
      "title": "US measles-free standing lost",
      "summary": "PAHO points to a full year of spread.",
@@ -377,171 +421,143 @@ STORIES = [
      "title": "Nvidia doubles to $115.8bn",
      "summary": "Shares rose late; next quarter near $130bn.",
      "status": "none", "event": "nvidia-earnings",
-     "cat": "US - BUSINESS", "scene": "chart", "source": "AP"},
+     "cat": "AMERICAS - BUSINESS", "scene": "chart", "source": "AP"},
     {"id": 8, "region": "MIDDLE EAST",
-     "title": "Rain floods shelters across Gaza",
+     "title": "Rain floods Gaza shelters",
      "summary": "Four allies press Israel to open the crossings.",
      "status": "none", "event": "gaza-aid-call",
      "cat": "MIDDLE EAST - GAZA", "scene": "gaza", "source": "AP"},
     {"id": 9, "region": "ASIA",
-     "title": "Japan sends jets up after airspace breach",
+     "title": "Japan sends jets after breach",
      "summary": "Russian planes entered Japanese airspace.",
      "status": "none", "event": "japan-jets",
      "cat": "ASIA - POLITICS", "scene": "japan", "source": "AP"},
     {"id": 10, "region": "EUROPE",
-     "title": "Depardieu concedes assault, ends appeal",
-     "summary": "The French actor withdrew his Paris appeal.",
-     "status": "none", "event": "depardieu-appeal",
-     "cat": "EUROPE - COURTS", "scene": "scales", "source": "AP"},
+     "title": "EU bans 12 African states' airlines",
+     "summary": "Brussels restricts 87 carriers over safety checks.",
+     "status": "none", "event": "eu-air-safety-list",
+     "cat": "EUROPE - AVIATION", "scene": "airban", "source": "AP"},
     {"id": 11, "region": "AMERICAS",
-     "title": "Apple restores iCloud and App Store",
+     "title": "Apple fixes iCloud, App Store",
      "summary": "Sign-ins and the store are working again.",
      "status": "none", "event": "apple-outage",
      "cat": "AMERICAS - TECH", "scene": "apple", "source": "AP"},
     {"id": 12, "region": "MIDDLE EAST",
-     "title": "Drones strike a Saudi oil pipeline",
-     "summary": "Five drones hit pumping stations near Riyadh.",
+     "title": "Houthis say drones launched at Riyadh",
+     "summary": "Houthis say five drones aimed at stations.",
      "status": "CLAIM", "event": "houthi-drones-saudi",
-     "cat": "MIDDLE EAST - ENERGY", "scene": "houthi", "source": "R",
-     "tag": "HOUTHI CLAIM - no Riyadh confirmation."},
+     "cat": "MIDDLE EAST - ENERGY", "scene": "houthi", "source": "Reuters",
+     "tag": "HOUTHI CLAIM - unconfirmed"},
     {"id": 13, "region": "ASIA",
-     "title": "Beijing pushes back on US chip limits",
+     "title": "Beijing hits back at US chip curbs",
      "summary": "China answered the new cloud-access restriction.",
      "status": "none", "event": "china-chip-curbs",
-     "cat": "ASIA - TRADE", "scene": "china", "source": "R"},
+     "cat": "ASIA - TRADE", "scene": "china", "source": "Reuters"},
     {"id": 14, "region": "ASIA",
-     "title": "Mongolia's president steps down",
-     "summary": "He denies a $25m bribe claim; parliament must agree.",
+     "title": "Mongolia president says he'll resign",
+     "summary": "Denies a $25m bribe claim; MPs must agree.",
      "status": "none", "event": "mongolia-resignation",
      "cat": "ASIA - POLITICS", "scene": "mongolia", "source": "AP"},
     {"id": 15, "region": "ASIA",
      "title": "Siberia plane crash kills 19",
-     "summary": "An An-12 came down near Kemerovo; officials blame a fault.",
+     "summary": "An An-12 fell near Kemerovo; fault blamed.",
      "status": "none", "event": "an12-crash",
      "cat": "ASIA - AIR CRASH", "scene": "an12", "source": "AP"},
     {"id": 16, "region": "MIDDLE EAST",
      "title": "(as reported) Lebanon: Israeli strikes, shelling and blasts.",
      "summary": "Israeli strikes, shelling and blasts were reported in Lebanon.",
-     "status": "none", "event": "lebanon-strikes", "source": "R"},
+     "status": "none", "event": "lebanon-strikes", "source": "Profile News"},
     {"id": 17, "region": "MIDDLE EAST",
      "title": "A second tanker was hit north of Khasab, Oman, UKMTO says.",
      "summary": "UKMTO said a second tanker was hit north of Khasab, Oman.",
      "status": "none", "event": "second-tanker-khasab", "source": "UKMTO"},
     {"id": 18, "region": "AMERICAS",
-     "title": "JPMorgan: services back after Monday's outage.",
-     "summary": "Chase said services were back to normal after Monday's "
-     "software bug.",
-     "status": "none", "event": "jpmorgan-outage", "source": "AP"},
-    {"id": 19, "region": "AMERICAS",
      "title": "US stocks slide: S&P 500 -1%, Dow -1.6%, Nasdaq -0.7%.",
      "summary": "US stocks slid: the S&P 500 fell 1%, the Dow 1.6% and the "
      "Nasdaq 0.7%.",
      "status": "none", "event": "wall-street-falls", "source": "AP"},
-    {"id": 20, "region": "AMERICAS",
+    {"id": 19, "region": "AMERICAS",
      "title": "Nvidia's board rules out bringing Huang back as chief.",
      "summary": "Nvidia's board ruled out bringing Jensen Huang back as chief "
      "executive.",
      "status": "none", "event": "nvidia-board-ceo", "source": "AP"},
+    {"id": 20, "region": "MIDDLE EAST",
+     "title": "Dubai International: 50.4m travellers, down 28.1%.",
+     "summary": "Dubai International handled 50.4 million travellers in nine "
+     "months, 28.1% fewer than before.",
+     "status": "none", "event": "dubai-airports", "source": "Dubai Airports"},
     {"id": 21, "region": "MIDDLE EAST",
-     "title": "Dubai airports handled 50.4m travellers in nine months, 28.1% "
-     "fewer.",
-     "summary": "Dubai airports handled 50.4 million travellers in nine months, "
-     "28.1% fewer than before.",
-     "status": "none", "event": "dubai-airports", "source": "AP"},
-    {"id": 22, "region": "MIDDLE EAST",
-     "title": "Yemen's army falls back toward Aden as Houthi fighters push "
-     "on.",
-     "summary": "Yemen's army fell back toward Aden as Houthi fighters pushed "
-     "on.",
+     "title": "Saudi-backed forces reinforce Tur al-Baha, 85km from Aden.",
+     "summary": "Saudi-backed forces reinforced Tur al-Baha, the first line of "
+     "defence for Aden.",
      "status": "none", "event": "yemen-pullback", "source": "AP"},
-    {"id": 23, "region": "EUROPE",
-     "title": "Five EU countries plan a Rwanda hub for returning migrants.",
-     "summary": "Five EU countries plan a hub in Rwanda for returning migrants.",
-     "status": "none", "event": "eu-rwanda-hub", "source": "AP"},
-    {"id": 24, "region": "EUROPE",
+    {"id": 22, "region": "EUROPE",
      "title": "Britain sanctions 8 firms over West Bank building, plus an "
      "aid-blocker.",
      "summary": "Britain froze the assets of eight firms building in the West "
      "Bank, and of Tzav 9, which blocks Gaza aid.",
      "status": "none", "event": "uk-westbank-sanctions", "source": "AP"},
-    {"id": 25, "region": "ASIA",
-     "title": "Xi and Carney agree to cut tariffs; China loosens curbs on "
-     "Canadian pork and seafood.",
+    {"id": 23, "region": "ASIA",
+     "title": "Xi and Carney agree tariff cuts; China eases pork, seafood "
+     "curbs.",
      "summary": "China will cut tariffs on C$400m of Canadian pork and seafood; "
      "Canada extends steel and aluminium relief.",
-     "status": "none", "event": "xi-carney-tariffs", "source": "R"},
-    {"id": 26, "region": "AFRICA",
+     "status": "none", "event": "xi-carney-tariffs", "source": "Reuters"},
+    {"id": 24, "region": "AFRICA",
      "title": "Mondlane stands trial in Mozambique on five charges.",
      "summary": "Opposition leader Venancio Mondlane stands trial on five "
      "charges over the deadly 2024 election protests.",
      "status": "none", "event": "mondlane-trial", "source": "AP"},
-    {"id": 27, "region": "AMERICAS",
+    {"id": 25, "region": "AMERICAS",
      "title": "ULA: Vulcan's first stage fell short; 40 Amazon satellites "
      "lost.",
      "summary": "ULA said the first stage fell short just after liftoff in "
      "Sunday's failure.",
-     "status": "none", "event": "vulcan-failure", "source": "AP"},
-    {"id": 28, "region": "OCEANIA",
+     "status": "none", "event": "vulcan-failure", "source": "ULA"},
+    {"id": 26, "region": "OCEANIA",
      "title": "Cyclone Xavier hits the Northern Cook Islands.",
      "summary": "Cyclone Xavier hit the Northern Cook Islands.",
-     "status": "none", "event": "cyclone-xavier", "source": "AP"},
-    {"id": 29, "region": "WORLD",
+     "status": "none", "event": "cyclone-xavier", "source": "RNZ"},
+    {"id": 27, "region": "WORLD",
      "title": "Voyager 1 nears a light-day from Earth; it crosses early "
      "Wednesday.",
      "summary": "Voyager 1 nears one light-day from Earth and crosses early "
      "Wednesday.",
      "status": "none", "event": "voyager-1", "source": "NASA"},
-    {"id": 30, "region": "AFRICA",
+    {"id": 28, "region": "AFRICA",
      "title": "UN confirms 2,230 civilian deaths in Sudan, most by drone.",
      "summary": "The UN confirmed 2,230 civilian deaths in Sudan, most caused "
      "by drones.",
      "status": "none", "event": "sudan-civilian-deaths", "source": "UN"},
-    {"id": 31, "region": "MIDDLE EAST",
+    {"id": 29, "region": "MIDDLE EAST",
      "title": "Israel: Kahana wins Knesset speaker vote, 66-52.",
      "summary": "Matan Kahana won the Knesset speaker vote by 66 to 52.",
-     "status": "none", "event": "kahana-speaker", "source": "AP"},
-    {"id": 32, "region": "EUROPE",
+     "status": "none", "event": "kahana-speaker", "source": "Reuters"},
+    {"id": 30, "region": "EUROPE",
      "title": "Moldova closes its skies as 7 drones enter; 5 come down by "
      "villages.",
      "summary": "Moldova closed its airspace as seven drones entered; five came "
      "down near villages.",
-     "status": "none", "event": "moldova-drones", "source": "AP"},
-    {"id": 33, "region": "ASIA",
-     "title": "Bangladesh: police use tear gas on garment workers seeking "
-     "higher pay.",
+     "status": "none", "event": "moldova-drones", "source": "Reuters"},
+    {"id": 31, "region": "ASIA",
+     "title": "Bangladesh: police use tear gas on garment workers seeking a "
+     "raise.",
      "summary": "Police used tear gas on garment workers around Dhaka seeking a "
      "Tk 30,000 minimum wage, up from Tk 12,500.",
-     "status": "none", "event": "bangladesh-garment-protests", "source": "TH"},
-    {"id": 34, "region": "EUROPE",
+     "status": "none", "event": "bangladesh-garment-protests", "source": "The Hindu"},
+    {"id": 32, "region": "EUROPE",
      "title": "France: 146,000 join wage protests; unions want higher pay.",
      "summary": "Wage protests drew 146,000 people across France; 28,000 "
      "marched in Paris.",
-     "status": "none", "event": "france-wage-protests", "source": "LM"},
-    {"id": 35, "region": "EUROPE",
-     "title": "Russia: no place for Europe at the next Ukraine talks, aide "
-     "says.",
-     "summary": "Moscow has not agreed to a European role in the next round of "
-     "Ukraine talks, aide Yuri Ushakov said.",
-     "status": "none", "event": "russia-europe-talks", "source": "R"},
-    {"id": 36, "region": "ASIA",
-     "title": "India: bus plunges 100m into a Uttarakhand gorge; 8 dead, 26 "
+     "status": "none", "event": "france-wage-protests", "source": "Le Monde"},
+    {"id": 33, "region": "ASIA",
+     "title": "India: bus plunges 100m into a Uttarakhand gorge; 9 dead, 25 "
      "hurt.",
      "summary": "A bus carrying 34 people plunged 100 metres into a gorge near "
-     "Gular bridge in Tehri Garhwal early Tuesday; 8 were killed and "
-     "26 hurt.",
+     "Gular bridge in Tehri Garhwal early Tuesday; 9 were killed and "
+     "25 hurt.",
      "status": "none", "event": "uttarakhand-bus-crash", "source": "PTI"},
-    {"id": 37, "region": "AFRICA",
-     "title": "Nigeria: Tinubu pardons 78 suspects held over the convoy "
-     "attack.",
-     "summary": "President Tinubu pardoned 78 suspects arrested over the "
-     "stoning of his convoy in Abuja on Friday.",
-     "status": "none", "event": "tinubu-frees-suspects", "source": "AP"},
-    {"id": 38, "region": "WORLD",
-     "title": "Pattinson picked as the next James Bond.",
-     "summary": "British actor Robert Pattinson was picked as the next James "
-     "Bond.",
-     "status": "none", "event": "pattinson-james-bond", "source": "AP"},
-    {"id": 39, "region": "ASIA",
+    {"id": 34, "region": "ASIA",
      "title": "Dhaka leads the world's most polluted cities; AQI 292.",
      "summary": "Dhaka led the world's most polluted cities on Tuesday morning, "
      "with an AQI of 292.",
@@ -551,11 +567,11 @@ STORIES = [
 
 def check_stories():
     """Automatic duplicate check: the program stops on any duplicate."""
-    if len(STORIES) != 39:
-        sys.exit(f"expected 39 stories, got {len(STORIES)}")
+    if len(STORIES) != 34:
+        sys.exit(f"expected 34 stories, got {len(STORIES)}")
     ids = [s["id"] for s in STORIES]
-    if ids != list(range(1, 40)):
-        sys.exit("story ids must be 1..39 in order")
+    if ids != list(range(1, 35)):
+        sys.exit("story ids must be 1..34 in order")
     for field in ("event", "title"):
         seen = {}
         for s in STORIES:
@@ -571,6 +587,25 @@ def check_stories():
             sys.exit(f"story {s['id']}: unknown status {s['status']!r}")
         if s["id"] <= 15 and "source" not in s:
             sys.exit(f"story {s['id']}: card without source initials")
+    # sources.json lives in the repo and is read from disk (never
+    # downloaded). Each entry must match its story's id, headline and
+    # source name, so the record cannot drift from the image.
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "sources.json"), encoding="utf-8") as f:
+        srcs = json.load(f)
+    by_id = {e["id"]: e for e in srcs}
+    if sorted(by_id) != list(range(1, len(STORIES) + 1)):
+        sys.exit("sources.json ids must be 1..%d in order"
+                 % len(STORIES))
+    for s in STORIES:
+        e = by_id[s["id"]]
+        if e["headline"].strip().lower() != s["title"].strip().lower():
+            sys.exit(f"sources.json id {s['id']}: headline does not match "
+                     f"the story title")
+        if e["source_name"] != s["source"]:
+            sys.exit(f"sources.json id {s['id']}: source_name "
+                     f"{e['source_name']!r} does not match "
+                     f"{s['source']!r}")
 
 
 def region_counts():
@@ -600,8 +635,8 @@ NUMBERS = [
     ("50.4m", "Dubai passengers, down 28.1%", INK, ""),
 ]
 
-WHY_TEXT = ("A bridge falls to the sea, tankers burn, and a 26-year run "
-            "of good health news ends.")
+WHY_TEXT = ("A bridge falls to the sea, tankers burn, and the US loses "
+            "a 26-year measles milestone.")
 
 THREAD_TEXT = ("Russia struck Kyiv's two Dnipro crossings on Monday; on "
                "Tuesday, Ukraine brought down the Kerch road span in reply.")
@@ -680,11 +715,14 @@ def draw_small_panel(img, d, x, y, w, h, story):
     ix, iy, iw, ih = panel(d, x, y, w, h)
     CARD_BOUNDS.append((group, ix, iy, ix + iw, iy + ih))
     region_col = REGION_COLORS[story["region"]]
+    # Small-card titles are capped at 2 lines, so the body starts at the
+    # same y in every card of a row; the summary is capped at 2 lines
+    # too, so it never reaches the fixed source line at the bottom.
     _, t_lines, t_lh = fit_block(d, story["title"], SANS_B, TITLE_SIZE,
-                                 TITLE_SIZE, iw, 3, 42,
+                                 TITLE_SIZE, iw, 2, 28,
                                  label=f"title {num}", strict=True)
     _, s_lines, s_lh = fit_block(d, story["summary"], SANS, BODY_SIZE,
-                                 BODY_SIZE, iw, 3, 36,
+                                 BODY_SIZE, iw, 2, 24,
                                  label=f"sub {num}", strict=True)
     tag = TAG_BY_ID.get(num)
     text_h = (4 + 16 + len(t_lines) * t_lh + 3 + len(s_lines) * s_lh
@@ -703,15 +741,17 @@ def draw_small_panel(img, d, x, y, w, h, story):
          group, label="cat")
     hy = cy + 16
     font, lines, lh = fit_block(d, story["title"], SANS_B, TITLE_SIZE,
-                                TITLE_SIZE, iw, 3, 42,
+                                TITLE_SIZE, iw, 2, 28,
                                 label=f"title {num}", strict=True)
     for ln in lines:
         tbox(d, ix, hy, ln, font, INK, group, label="title")
         hy += lh
     font2, lines2, lh2 = fit_block(d, story["summary"], SANS, BODY_SIZE,
-                                   BODY_SIZE, iw, 3, 36,
+                                   BODY_SIZE, iw, 2, 24,
                                    label=f"sub {num}", strict=True)
-    sy = hy + 3
+    # Fixed body start: the summary always begins as if the title took
+    # its full 2 lines, so every card in a row aligns.
+    sy = cy + 16 + 2 * lh + 3
     for ln in lines2:
         tbox(d, ix, sy, ln, font2, INK, group, label="sub")
         sy += lh2
@@ -778,7 +818,7 @@ def check_layout():
           f"{len(BOXES)} recorded boxes, {len(PIN_CENTERS)} pins")
 
 
-LIST_SIZE = 10  # (defined here so main() reads it after the data block)
+LIST_SIZE = 11  # (defined here so main() reads it after the data block)
 
 
 def main():
@@ -918,7 +958,12 @@ def main():
             d.ellipse([lx + 12, yy + 1, lx + 18, yy + 7], fill=col)
             tbox(d, lx + 24, yy, f"{s['id']}. {s['title']}",
                  fb(SANS, LIST_SIZE), INK, "list", label="row")
-            yy += 10
+            # Source initial, right-aligned at the row's end.
+            sf = fb(SANS, 8)
+            sw = d.textlength(s["source"], font=sf)
+            tbox(d, lx + lw - 12 - sw, yy + 1, s["source"], sf, GREY,
+                 "list", label="row-source")
+            yy += 12
         if gi < len(ALSO_BY_REGION) - 1:
             yy += 3
     HEIGHT_LOG.append(("list", yy - list_top, list_h))
@@ -933,7 +978,7 @@ def main():
     # Footer (with the tag legend on the second line), raised and set
     # at 8 px so both source lines read in full (point 3).
     tbox_c(d, W // 2, 990,
-           "Each item below took place, or was first reported, on Tuesday "
+           "Each item on this page took place, or was first reported, on Tuesday "
            "17 November 2026. Anything still disputed is labelled a claim.",
            fb(SANS, 8), GREY, "footer", label="footer1")
     tbox_c(d, W // 2, 999,
