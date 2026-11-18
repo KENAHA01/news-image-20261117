@@ -1,10 +1,15 @@
-"""Draw the dense v2 front page for news-image-20261117 (1024x1024 PNG).
+"""Draw the dense v3 front page for news-image-20261117 (1024x1024 PNG).
 
-Newspaper style: off-white paper, ink text, dark-red accent. 13 numbered
-stories plus a world map with pins and a list of one-liners, all from
-Tuesday 17 November 2026 as reported by Reuters, AP, PAHO, WHO and the UN.
-Every map, flag and icon is drawn with PIL shapes; no network, no external
-images. Text is never clipped: every block shrinks its font until it fits.
+v3 = v2 (13 numbered stories, world map with pins, 18 one-liners) plus a
+verification layer: a BY THE NUMBERS strip, a WHY THIS DAY MATTERS line,
+a THE DAY'S THREAD line, CONFIRMED / CLAIM tags on contested items, and a
+DATE CHECK box for items that belong to 16 November, not this day.
+
+Newspaper style: off-white paper, ink text, dark-red accent. All stories
+from Tuesday 17 November 2026 as reported by Reuters, AP, PAHO, WHO and
+the UN. Every map, flag and icon is drawn with PIL shapes; no network, no
+external images. Text is never clipped: every block shrinks its font
+until it fits.
 """
 
 from PIL import Image, ImageDraw, ImageFont
@@ -17,9 +22,12 @@ RED = (139, 30, 30)
 GREY = (90, 84, 72)
 SEA = (207, 227, 238)
 LAND = (232, 223, 200)
+TAG_GREEN = (0, 110, 60)
+TAG_AMBER = (176, 120, 0)
 
 FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
 SERIF_B = FONT_DIR + "DejaVuSerif-Bold.ttf"
+SERIF = FONT_DIR + "DejaVuSerif.ttf"
 SANS_B = FONT_DIR + "DejaVuSans-Bold.ttf"
 SANS = FONT_DIR + "DejaVuSans.ttf"
 
@@ -230,21 +238,23 @@ def map_gulf(d, x, y, w, h):
               fill=LAND)
     d.ellipse([x + w * 0.2, y + h * 0.55, x + w * 0.26, y + h * 0.61],
               fill=LAND)
-    for sx, sy in ((0.59, 0.57), (0.42, 0.78), (0.78, 0.72)):
+    for sx, sy in ((0.59, 0.57), (0.42, 0.78), (0.85, 0.55)):
         cx, cy = x + w * sx, y + h * sy
         d.line([(cx - 6, cy), (cx + 6, cy)], fill=RED, width=2)
         d.line([(cx, cy - 6), (cx, cy + 6)], fill=RED, width=2)
-    f = fb(SANS_B, 11)
-    d.text((x + 8, y + 4), "IRAN", font=f, fill=INK)
-    d.text((x + w * 0.55, y + h * 0.64), "QESHM", font=f, fill=INK)
-    d.text((x + w * 0.06, y + h * 0.62), "BAHRAIN", font=f, fill=INK)
-    d.text((x + w * 0.6, y + h * 0.8), "HORMUZ", font=f, fill=INK)
+    f = fb(SANS_B, 10)
+    d.text((x + 8, y + 3), "IRAN", font=f, fill=INK)
+    d.text((x + 8, y + h * 0.45), "BAHRAIN", font=f, fill=INK)
+    # QESHM right of its island, HORMUZ bottom centre: the two labels
+    # must not stack on each other at this small map height.
+    d.text((x + w * 0.68, y + h * 0.42), "QESHM", font=f, fill=INK)
+    d.text((x + w * 0.60, y + h * 0.78), "HORMUZ", font=f, fill=INK)
 
 
 def map_quad(d, x, y, w, h):
     d.rectangle([x, y, x + w, y + h], fill=CARD, outline=INK, width=1)
-    fw, fh = (w - 40) // 4, 46
-    fy = y + 8
+    fw, fh = (w - 40) // 4, max(20, h - 22)
+    fy = y + 5
     xs = [x + 8 + i * (fw + 8) for i in range(4)]
     # US: stripes + canton
     d.rectangle([xs[0], fy, xs[0] + fw, fy + fh], outline=INK, width=1)
@@ -276,9 +286,9 @@ def map_quad(d, x, y, w, h):
     for sx, sy in ((0.7, 0.3), (0.85, 0.6), (0.65, 0.75)):
         d.ellipse([xs[3] + fw * sx - 2, fy + fh * sy - 2,
                    xs[3] + fw * sx + 2, fy + fh * sy + 2], fill=CARD)
-    f = fb(SANS_B, 11)
+    f = fb(SANS_B, 10)
     for i, name in enumerate(("US", "INDIA", "JAPAN", "AUSTRALIA")):
-        text_center(d, xs[i] + fw / 2, fy + fh + 6, name, f, INK)
+        text_center(d, xs[i] + fw / 2, fy + fh + 3, name, f, INK)
 
 
 # ---- schematic world map with numbered pins ----
@@ -360,8 +370,34 @@ SMALL = [
      "Beijing hits back at the cloud-access rule.", icon_trade),
 ]
 
+NUMBERS = [
+    ("11,000+", "Ebola cases, DR Congo"),
+    ("$115.8bn", "Nvidia quarter"),
+    ("-1.6%", "Dow on Tuesday"),
+    ("24", "seafarers evacuated from the Tara Gas"),
+    ("1,441", "drones Russia says it downed"),
+    ("50.4m", "Dubai airport passengers in 9 months, down 28.1%"),
+]
+
+WHY_TEXT = ("A Tuesday of falling bridges, burning tankers and a 26-year "
+            "health milestone lost.")
+
+THREAD_TEXT = ("Monday, Russia hit Kyiv's two Dnipro bridges - Tuesday, "
+               "Ukraine answered by dropping the Kerch road span.")
+
+DATECHECK_TITLE = "DATE CHECK - left out as earlier news:"
+DATECHECK_ITEMS = ("COP31's first draft (16 Nov) - Grammy nominations "
+                   "announced (16 Nov) - US chip-export rule (16 Nov).")
+
+TAG_KERCH = ("CONFIRMED: Reuters-verified footage of the collapsed span.",
+             TAG_GREEN)
+TAG_IRAN = ("CLAIM: Iran says tankers hit mines in Hormuz - not "
+            "independently verified.", TAG_AMBER)
+TAG_HOUTHI = ("HOUTHI CLAIM - no Saudi confirmation.", TAG_AMBER)
+
 ONE_LINERS = [
-    "Lebanon: Israeli airstrikes, shelling and detonations reported.",
+    "(as reported) Lebanon: Israeli airstrikes, shelling and detonations "
+    "reported.",
     "Oman evacuates 24 seafarers from the burning gas tanker Tara Gas.",
     "UKMTO reports a second tanker strike north of Khasab, Oman.",
     "Zelenskyy: bridge strike answers Russian attacks on infrastructure.",
@@ -382,32 +418,47 @@ ONE_LINERS = [
 ]
 
 
-def draw_big_panel(d, x, y, w, h, num, cat, headline, sub, kind):
+def draw_tag(d, x, y, max_w, text, color, start=10):
+    """Small verification tag: coloured square + bold text, wrapped."""
+    font, lines, lh = fit_block(d, text, SANS_B, start, 8, max_w - 12,
+                                2, 22)
+    yy = y
+    for ln in lines:
+        d.rectangle([x, yy + 3, x + 7, yy + 10], fill=color)
+        d.text((x + 11, yy), ln, font=font, fill=color)
+        yy += lh
+    return yy
+
+
+def draw_big_panel(d, x, y, w, h, num, cat, headline, sub, kind, tag=None):
     ix, iy, iw, ih = panel(d, x, y, w, h)
-    map_h = 74
+    map_h = 48
     if kind == "kerch":
         map_kerch(d, ix, iy, iw, map_h)
     elif kind == "gulf":
         map_gulf(d, ix, iy, iw, map_h)
     else:
         map_quad(d, ix, iy, iw, map_h)
-    ty = iy + map_h + 8
+    ty = iy + map_h + 6
     d.text((ix, ty), f"{num}. {cat}", font=fb(SANS_B, 14), fill=RED)
     hy = ty + 20
-    font, lines, lh = fit_block(d, headline, SANS_B, 23, 17, iw, 3, 72)
+    font, lines, lh = fit_block(d, headline, SANS_B, 23, 16, iw, 3, 54)
     for ln in lines:
         d.text((ix, hy), ln, font=font, fill=INK)
         hy += lh
-    font2, lines2, lh2 = fit_block(d, sub, SANS, 15, 12, iw, 3, 48)
-    sy = hy + 4
+    font2, lines2, lh2 = fit_block(d, sub, SANS, 15, 12, iw, 3, 42)
+    sy = hy + 3
     for ln in lines2:
         d.text((ix, sy), ln, font=font2, fill=INK)
         sy += lh2
+    if tag is not None:
+        draw_tag(d, ix, sy + 3, iw, tag[0], tag[1])
 
 
 def draw_small_panel(d, x, y, w, h, num, cat, headline, sub, icon,
                      head_start, head_min, head_lines, sub_start, sub_min,
-                     sub_lines, icon_s):
+                     sub_lines, icon_s, head_max, sub_max, tag=None,
+                     tag_max=0):
     ix, iy, iw, ih = panel(d, x, y, w, h)
     icon(d, ix + iw - icon_s, iy, icon_s)
     cat_text = f"{num}. {cat}"
@@ -418,9 +469,6 @@ def draw_small_panel(d, x, y, w, h, num, cat, headline, sub, icon,
     d.text((ix, iy), cat_text, font=fb(SANS_B, cat_size), fill=RED)
     # Headline starts below the icon so no text ever runs under it.
     hy = iy + icon_s + 6
-    avail = (iy + ih) - hy - 3
-    head_max = avail * 55 // 100
-    sub_max = avail - head_max - 3
     font, lines, lh = fit_block(d, headline, SANS_B, head_start, head_min,
                                 iw, head_lines, head_max)
     for ln in lines:
@@ -432,6 +480,8 @@ def draw_small_panel(d, x, y, w, h, num, cat, headline, sub, icon,
     for ln in lines2:
         d.text((ix, sy), ln, font=font2, fill=INK)
         sy += lh2
+    if tag is not None:
+        draw_tag(d, ix, sy + 3, iw, tag[0], tag[1])
 
 
 def main():
@@ -440,74 +490,116 @@ def main():
     d.rectangle([10, 10, W - 11, H - 11], outline=INK, width=4)
 
     # Top kicker.
-    d.text((16, 18), "THE WORLD'S NEWS IN ONE PICTURE",
+    d.text((16, 14), "THE WORLD'S NEWS IN ONE PICTURE",
            font=fb(SANS_B, 15), fill=RED)
     right = "13 STORIES - 5 CONTINENTS - ALL FROM TUESDAY"
     rw = d.textlength(right, font=fb(SANS_B, 15))
-    d.text((1008 - rw, 18), right, font=fb(SANS_B, 15), fill=INK)
-    d.line([(16, 40), (1008, 40)], fill=RED, width=2)
+    d.text((1008 - rw, 14), right, font=fb(SANS_B, 15), fill=INK)
+    d.line([(16, 34), (1008, 34)], fill=RED, width=2)
 
-    # Banner, serif bold, as large as fits.
-    size = 64
+    # Banner, serif bold, as large as fits, with room below the descenders
+    # so the tail of the "y" in "Tuesday" clears the rule underneath.
+    size = 52
     while (d.textlength("Tuesday 17 November 2026", font=fb(SERIF_B, size))
            > 980 and size > 40):
         size -= 2
-    text_center(d, W // 2, 46, "Tuesday 17 November 2026",
+    text_center(d, W // 2, 38, "Tuesday 17 November 2026",
                 fb(SERIF_B, size), INK)
-    d.line([(16, 112), (1008, 112)], fill=RED, width=3)
+    d.line([(16, 100), (1008, 100)], fill=RED, width=3)
 
-    # Row 1: three big panels.
+    # 1. BY THE NUMBERS strip.
+    cell_w = (1008 - 16) / 6
+    for i, (num, label) in enumerate(NUMBERS):
+        cx = 16 + i * cell_w
+        text_center(d, cx + cell_w / 2, 106, num, fb(SANS_B, 22), INK)
+        font, lines, lh = fit_block(d, label, SANS, 10, 9,
+                                    cell_w - 12, 2, 24)
+        ly2 = 132
+        for ln in lines:
+            text_center(d, cx + cell_w / 2, ly2, ln, font, GREY)
+            ly2 += lh
+        if i:
+            d.line([(cx, 108), (cx, 152)], fill=GREY, width=1)
+
+    # 2. WHY THIS DAY MATTERS line (serif; no italic serif on this VM,
+    # so regular serif, centred).
+    text_center(d, W // 2, 160, WHY_TEXT, fb(SERIF, 18), INK)
+
+    # Row 1: three big panels (tags on panels 1 and 2).
+    big_tags = [TAG_KERCH, TAG_IRAN, None]
     for i, (cat, head, sub, kind) in enumerate(BIG):
-        draw_big_panel(d, 16 + i * 335, 122, 322, 250, i + 1, cat, head,
-                       sub, kind)
+        draw_big_panel(d, 16 + i * 335, 186, 322, 220, i + 1, cat, head,
+                       sub, kind, tag=big_tags[i])
+
+    # 3. THE DAY'S THREAD line.
+    label = "THE DAY'S THREAD: "
+    lw = d.textlength(label, font=fb(SANS_B, 13))
+    d.text((16, 412), label, font=fb(SANS_B, 13), fill=RED)
+    d.text((16 + lw, 412), THREAD_TEXT, font=fb(SANS, 13), fill=INK)
 
     # Row 2: five medium panels.
     for i, (cat, head, sub, icon) in enumerate(MEDIUM):
-        draw_small_panel(d, 16 + i * 200, 382, 190, 180, i + 4, cat, head,
-                         sub, icon, 18, 14, 3, 14, 11, 3, 34)
+        draw_small_panel(d, 16 + i * 200, 436, 190, 158, i + 4, cat, head,
+                         sub, icon, 18, 14, 3, 14, 11, 3, 28, 53, 41)
 
-    # Row 3: five small panels.
+    # Row 3: five small panels (tag on panel 12).
     for i, (cat, head, sub, icon) in enumerate(SMALL):
-        draw_small_panel(d, 16 + i * 200, 572, 190, 124, i + 9, cat, head,
-                         sub, icon, 16, 13, 2, 13, 11, 2, 28)
+        num = i + 9
+        if num == 12:
+            draw_small_panel(d, 16 + i * 200, 600, 190, 126, num, cat,
+                             head, sub, icon, 16, 12, 2, 13, 10, 2, 14,
+                             30, 22, tag=TAG_HOUTHI, tag_max=20)
+        else:
+            draw_small_panel(d, 16 + i * 200, 600, 190, 126, num, cat,
+                             head, sub, icon, 16, 13, 2, 13, 11, 2, 22,
+                             39, 29)
 
     # Bottom left: world map with numbered pins.
-    mx, my, mw, mh = 16, 706, 486, 282
+    mx, my, mw, mh = 16, 732, 486, 216
     d.rectangle([mx, my, mx + mw, my + mh], fill=CARD, outline=INK, width=2)
     d.rectangle([mx, my, mx + mw, my + 5], fill=RED)
     section_title(d, mx + 12, my + 12, "WHERE IT HAPPENED")
-    draw_world_map(d, mx + 12, my + 36, mw - 24, mh - 48)
+    draw_world_map(d, mx + 12, my + 32, mw - 24, mh - 44)
 
     # Bottom right: numbered one-liners.
-    lx, ly, lw, lh = 514, 706, 494, 282
+    lx, ly, lw, lh = 514, 732, 494, 216
     d.rectangle([lx, ly, lx + lw, ly + lh], fill=CARD, outline=INK, width=2)
     d.rectangle([lx, ly, lx + lw, ly + 5], fill=RED)
     section_title(d, lx + 12, ly + 12, "ALSO ON TUESDAY 17 NOVEMBER")
-    list_top, list_h = ly + 36, lh - 48
-    size = 13
-    while size >= 10:
+    list_top, list_h = ly + 32, lh - 36
+    size = 11
+    while size >= 9:
         font = fb(SANS, size)
-        lh_px = int(size * 1.12)
+        lh_px = int(size * 1.05)
         if (len(ONE_LINERS) * lh_px <= list_h and all(
                 d.textlength(f"{i + 1}. {t}", font=font) <= lw - 24
                 for i, t in enumerate(ONE_LINERS))):
             break
         size -= 1
     font = fb(SANS, size)
-    lh_px = int(size * 1.12)
+    lh_px = int(size * 1.05)
     yy = list_top
     for i, t in enumerate(ONE_LINERS):
         d.text((lx + 12, yy), f"{i + 1}. {t}", font=font, fill=INK)
         yy += lh_px
 
-    # Footer (10 px, clear of the bottom border at y=1011).
-    text_center(d, W // 2, 989,
+    # 5. DATE CHECK box.
+    d.rectangle([16, 950, 1008, 984], outline=INK, width=2)
+    d.rectangle([16, 950, 22, 984], fill=RED)
+    d.text((30, 954), DATECHECK_TITLE, font=fb(SANS_B, 11), fill=INK)
+    d.text((30, 968), DATECHECK_ITEMS, font=fb(SANS, 11), fill=INK)
+
+    # Footer (with the tag legend on the second line).
+    text_center(d, W // 2, 988,
                 "Every story here happened or was first reported on Tuesday "
                 "17 November 2026. Contested claims are marked as claims.",
                 fb(SANS, 10), GREY)
-    text_center(d, W // 2, 1000,
-                "Sources: Reuters, AP, PAHO, WHO, UN. Original drawings.",
-                fb(SANS, 10), GREY)
+    text_center(d, W // 2, 998,
+                "Sources: Reuters, AP, PAHO, WHO, UN. Original drawings. "
+                "Tags: CONFIRMED = verified by Reuters / AP / PAHO / WHO / "
+                "UN; CLAIM = as stated by the source, not independently "
+                "verified.",
+                fb(SANS, 9), GREY)
 
     img.save(OUT, optimize=True)
     print("saved", OUT)
