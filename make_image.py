@@ -29,6 +29,18 @@ or the CONFIRMED/CLAIM tags:
    card 14) and card 7 uses a rising-chart scene (not a chip like
    card 13).
 
+Polish round (19 Nov 2026 ~05:03 WIB): card 3's flag area is 32 px
+(flags 20 px, labels clear; the dots are removed from map_quad
+because in a 28-32 px strip they sat on top of the labels) plus a
+leaders caption; cards 1-2 labels clear of lines and icons; DATE
+CHECK strip raised to 16 px; tags standardised to "[REGION] -
+[TOPIC]" (small-card cat font 8 px so "MIDDLE EAST - ENERGY"
+fits); list items 33, 36, 37 replaced with Asia/Africa stories
+(Bangladesh garment protests, Uttarakhand bus crash, Tinubu frees
+78 suspects); the unsourced "shares fall" (JPMorgan) and "faces up
+to 24 years" (Mondlane) phrases removed, while Vulcan keeps "first
+stage underperformed" because the title names ULA as its source.
+
 A layout check runs before saving: it stops the program if any card
 title or body shrank below its set size, if any card's content
 overflows its frame, if the list does not fit, if two map pins
@@ -249,10 +261,13 @@ def draw_tag(d, x, y, w, text, color, group, start=9, max_h=20):
 
 def map_kerch(d, x, y, w, h):
     d.rectangle([x, y, x + w, y + h], fill=SEA, outline=INK, width=1)
-    f = fb(SANS_B, 9)
-    d.text((x + 6, y + 2), "RUSSIA", font=f, fill=INK)
-    d.text((x + 6, y + h - 12), "CRIMEA", font=f, fill=INK)
-    by = y + h * 0.45
+    # 8 px labels so RUSSIA and CRIMEA clear the bridge line: RUSSIA
+    # ends above the bridge, CRIMEA starts below it, KERCH STRAIT
+    # sits clear of both and of the ship.
+    f = fb(SANS_B, 8)
+    d.text((x + 6, y + 1), "RUSSIA", font=f, fill=INK)
+    d.text((x + 6, y + h - 10), "CRIMEA", font=f, fill=INK)
+    by = y + h * 0.50
     d.rectangle([x, y + by - 3, x + w * 0.42, y + by + 3], fill=INK)
     d.rectangle([x + w * 0.58, y + by - 3, x + w, y + by + 3], fill=INK)
     d.polygon([(x + w * 0.42, y + by - 3), (x + w * 0.50, y + by + 12),
@@ -295,10 +310,12 @@ def map_gulf(d, x, y, w, h):
               fill=(255, 150, 40))
     d.ellipse([x + w * (tx0 + 0.04), y + h * ty0 - 7,
                x + w * (tx0 + 0.07), y + h * ty0 - 2], fill=RED)
-    # QESHM top-centre between the two grey lanes, HORMUZ bottom-centre
-    # right: both clear of the X marks, the tanker and the lanes.
-    d.text((x + w * 0.48, y + h * 0.08), "QESHM", font=f, fill=INK)
-    d.text((x + w * 0.64, y + h - 9), "HORMUZ", font=f, fill=INK)
+    # QESHM left of the middle X mark (clear of it, the flame and the
+    # lanes), HORMUZ lifted off the bottom edge (clear of both X marks
+    # and the second lane's foot): both inside the box, overlapped by
+    # nothing.
+    d.text((x + w * 0.42, y + h * 0.06), "QESHM", font=f, fill=INK)
+    d.text((x + w * 0.64, y + h - 11), "HORMUZ", font=f, fill=INK)
 
 
 def map_quad(d, x, y, w, h):
@@ -310,7 +327,11 @@ def map_quad(d, x, y, w, h):
     ]
     d.rectangle([x, y, x + w, y + h], fill=CARD, outline=INK, width=1)
     cw = w / 4
-    fh = max(12, h - 23)
+    # Flags use most of the height; the labels sit directly below
+    # them. The location dots and baseline are gone: in a 28-32 px
+    # strip they sat on top of the labels, and the four flags already
+    # name the four countries.
+    fh = h - 12
     fy = y + 2
     f = fb(SANS_B, 8)
     for i, (c1, c2, c3, name) in enumerate(flags):
@@ -330,8 +351,9 @@ def map_quad(d, x, y, w, h):
                             fill=(c1, c2, c3)[s])
         elif i == 2:
             d.rectangle([fx, fy, fx + fw, fy + fh], fill=c1)
-            d.ellipse([fx + fw / 2 - 4, fy + fh / 2 - 4, fx + fw / 2 + 4,
-                       fy + fh / 2 + 4], fill=c2)
+            r = max(3, fh // 4)
+            d.ellipse([fx + fw / 2 - r, fy + fh / 2 - r, fx + fw / 2 + r,
+                       fy + fh / 2 + r], fill=c2)
         else:
             d.rectangle([fx, fy, fx + fw, fy + fh], fill=c1)
             for sx in (0.2, 0.6):
@@ -340,12 +362,6 @@ def map_quad(d, x, y, w, h):
                            fill=c2)
         d.text((fx + fw / 2 - d.textlength(name, font=f) / 2, fy + fh + 1),
                name, font=f, fill=INK)
-    ty = y + h - 3
-    d.line([(x + 4, ty), (x + w - 4, ty)], fill=INK, width=2)
-    for i in range(4):
-        cx = x + i * cw + cw / 2
-        d.ellipse([cx - 6, ty - 7, cx + 6, ty - 1], fill=INK)
-        d.rectangle([cx - 5, ty, cx + 5, ty + 2], fill=INK)
 
 
 # ---- small-card scenes (drawn to fill the strip height h) ----
@@ -648,7 +664,9 @@ STORIES = [
      "meet Xi and Putin in China on Thursday.",
      "status": "none", "event": "quad-summit-manila",
      "cat": "ASIA - DIPLOMACY", "scene": "quad", "source": "AP",
-     "caption": "Manila, Philippines - ASEAN and Quad summits"},
+     "caption": "Manila, Philippines - ASEAN and Quad summits",
+     "map_h": 32,
+     "caption2": "Quad leaders: Trump, Modi, Takaichi, Albanese."},
     {"id": 4, "region": "AFRICA",
      "title": "Ebola cases in DR Congo top 11,000",
      "summary": "WHO says 5,400 have died; it reviews the emergency "
@@ -659,7 +677,7 @@ STORIES = [
      "title": "COP31 talks grind on in Antalya",
      "summary": "Nations weigh a first draft; the talks end Friday.",
      "status": "none", "event": "cop31-talks",
-     "cat": "GLOBAL - CLIMATE", "scene": "cop31", "source": "AP"},
+     "cat": "WORLD - CLIMATE", "scene": "cop31", "source": "AP"},
     {"id": 6, "region": "AMERICAS",
      "title": "US measles-free status lost",
      "summary": "PAHO cites a year of uninterrupted spread.",
@@ -690,12 +708,12 @@ STORIES = [
      "title": "Apple outage fixed",
      "summary": "iCloud sign-ins and the App Store back up.",
      "status": "none", "event": "apple-outage",
-     "cat": "TECH", "scene": "apple", "source": "AP"},
+     "cat": "AMERICAS - TECH", "scene": "apple", "source": "AP"},
     {"id": 12, "region": "MIDDLE EAST",
      "title": "Houthi drones hit Saudi pipeline",
      "summary": "Five drones aimed at Riyadh pumping stations.",
      "status": "CLAIM", "event": "houthi-drones-saudi",
-     "cat": "MIDEAST - ENERGY", "scene": "houthi", "source": "R",
+     "cat": "MIDDLE EAST - ENERGY", "scene": "houthi", "source": "R",
      "tag": "HOUTHI CLAIM - no Saudi confirmation."},
     {"id": 13, "region": "ASIA",
      "title": "China rejects US chip curbs",
@@ -711,7 +729,7 @@ STORIES = [
      "title": "An-12 crash in Siberia kills 19",
      "summary": "Plane down near Kemerovo; ministry blames a fault.",
      "status": "none", "event": "an12-crash",
-     "cat": "RUSSIA - AIR CRASH", "scene": "an12", "source": "AP"},
+     "cat": "ASIA - AIR CRASH", "scene": "an12", "source": "AP"},
     {"id": 16, "region": "MIDDLE EAST",
      "title": "(as reported) Lebanon: Israeli airstrikes, shelling, "
      "detonations.",
@@ -725,10 +743,9 @@ STORIES = [
      "Oman.",
      "status": "none", "event": "second-tanker-khasab", "source": "UKMTO"},
     {"id": 18, "region": "AMERICAS",
-     "title": "JPMorgan: service restored after Monday's outage; "
-     "shares fall.",
+     "title": "JPMorgan: service restored after Monday's outage.",
      "summary": "Chase said transactions were back to normal after "
-     "Monday's software bug; shares fell.",
+     "Monday's software bug.",
      "status": "none", "event": "jpmorgan-outage", "source": "AP"},
     {"id": 19, "region": "AMERICAS",
      "title": "Wall Street: S&P 500 -1%, Dow -1.6%, Nasdaq -0.7%.",
@@ -767,8 +784,7 @@ STORIES = [
      "seafood; Canada extends steel and aluminium relief.",
      "status": "none", "event": "xi-carney-tariffs", "source": "R"},
     {"id": 26, "region": "AFRICA",
-     "title": "Mondlane goes on trial in Mozambique; faces up to "
-     "24 years.",
+     "title": "Mondlane goes on trial in Mozambique; faces five charges.",
      "summary": "Opposition leader Venancio Mondlane faces five charges "
      "over the deadly 2024 election protests.",
      "status": "none", "event": "mondlane-trial", "source": "AP"},
@@ -805,12 +821,13 @@ STORIES = [
      "summary": "Moldova shut its airspace as seven drones crossed in; "
      "five crashed near villages.",
      "status": "none", "event": "moldova-drones", "source": "AP"},
-    {"id": 33, "region": "AMERICAS",
-     "title": "US: 13 babies born with congenital measles; most cases "
-     "since 1991.",
-     "summary": "Thirteen babies were born with congenital measles in "
-     "the US; cases are the highest since 1991.",
-     "status": "none", "event": "congenital-measles", "source": "AP"},
+    {"id": 33, "region": "ASIA",
+     "title": "Bangladesh: police fire tear gas at garment workers "
+     "demanding higher pay.",
+     "summary": "Police fired tear gas at garment workers around Dhaka "
+     "demanding a Tk 30,000 minimum wage, up from Tk 12,500.",
+     "status": "none", "event": "bangladesh-garment-protests",
+     "source": "TH"},
     {"id": 34, "region": "EUROPE",
      "title": "France: wage protests draw 146,000; unions demand higher "
      "pay.",
@@ -822,17 +839,19 @@ STORIES = [
      "summary": "Moscow has not agreed to European participation in the "
      "next round of Ukraine talks, aide Yuri Ushakov said.",
      "status": "none", "event": "russia-europe-talks", "source": "R"},
-    {"id": 36, "region": "AMERICAS",
-     "title": "NSA: classified network down; Fort Meade under code "
-     "orange.",
-     "summary": "The NSA's classified NSANet network went down early "
-     "Tuesday; the Fort Meade campus was restricted under code orange.",
-     "status": "none", "event": "nsa-nsanet-outage", "source": "CNN"},
-    {"id": 37, "region": "AMERICAS",
-     "title": "Ecuador: 16 fishermen sue US over drone attack on boat.",
-     "summary": "Sixteen Ecuadorian fishermen sued the US government "
-     "over a drone attack that sank their boat in the Pacific in March.",
-     "status": "none", "event": "ecuador-fishermen-lawsuit", "source": "AP"},
+    {"id": 36, "region": "ASIA",
+     "title": "India: bus falls 100m into gorge in Uttarakhand; 8 "
+     "killed, 26 hurt.",
+     "summary": "A bus carrying 34 people fell 100 metres into a gorge "
+     "near Gular bridge in Tehri Garhwal early Tuesday; 8 were killed "
+     "and 26 hurt.",
+     "status": "none", "event": "uttarakhand-bus-crash", "source": "PTI"},
+    {"id": 37, "region": "AFRICA",
+     "title": "Nigeria: Tinubu frees 78 suspects held over convoy "
+     "attack.",
+     "summary": "President Tinubu granted clemency to 78 suspects "
+     "arrested over the stoning of his convoy in Abuja on Friday.",
+     "status": "none", "event": "tinubu-frees-suspects", "source": "AP"},
     {"id": 38, "region": "WORLD",
      "title": "Pattinson named the new James Bond.",
      "summary": "British actor Robert Pattinson was named as the new "
@@ -935,11 +954,11 @@ def draw_big_panel(img, d, x, y, w, h, story):
     font2, lines2, lh2 = fit_block(d, story["summary"], SANS, BODY_SIZE,
                                    BODY_SIZE, iw, 3, 33,
                                    label=f"big sub {num}", strict=True)
-    # Fixed illustration height (point 4): the wide map is 28 px in
-    # every big card, so the caption, category, title and body start
-    # at the same y in all three. Drawn on a layer, so it is clipped
-    # to its box (point 2).
-    map_h = 28
+    # Fixed illustration height: the wide map is 28 px in big cards,
+    # except card 3 (Quad flags), whose map is 32 px so the flags are
+    # taller and their labels clear (the dots are gone from map_quad).
+    # Drawn on a layer, so it is clipped to its box.
+    map_h = story.get("map_h", 28)
     HEIGHT_LOG.append((f"big card {num} map-min", map_h, 28))
 
     def _map(ld, mx, my, mw, mh):
@@ -965,11 +984,19 @@ def draw_big_panel(img, d, x, y, w, h, story):
     for ln in lines2:
         tbox(d, ix, sy, ln, font2, INK, group, label="sub")
         sy += lh2
+    # Extra caption, only where the story carries one (card 3): fills
+    # the empty space under the body text.
+    caption2 = story.get("caption2")
+    if caption2:
+        tbox(d, ix, sy + 6, caption2, fb(SANS, 9), GREY, group,
+             label="caption2")
+        sy += 6 + 10
     if tag is not None:
         draw_tag(d, ix, sy + 3, iw, tag[0], tag[1], group)
     draw_source(d, ix, iy, iw, ih, story["source"], group)
     content_h = (map_h + 8 + 3 + 15 + len(lines) * lh + 3
-                 + len(lines2) * lh2 + 3 + (20 if tag else 0))
+                 + len(lines2) * lh2 + (16 if caption2 else 0)
+                 + 3 + (20 if tag else 0))
     HEIGHT_LOG.append((f"big card {num}", content_h, ih))
 
 
@@ -998,7 +1025,9 @@ def draw_small_panel(img, d, x, y, w, h, story):
                   lambda ld, mx, my, mw, mh: draw_scene(
                       ld, mx, my, mw, mh, story["scene"]), CARD)
     cy = iy + scene_h + 4
-    tbox(d, ix, cy, f"{num}. {story['cat']}", fb(SANS_B, 9), region_col,
+    # 8 px (was 9): the standardised "MIDDLE EAST - ENERGY" tag is
+    # too wide for a 134 px card at 9 px.
+    tbox(d, ix, cy, f"{num}. {story['cat']}", fb(SANS_B, 8), region_col,
          group, label="cat")
     hy = cy + 16
     font, lines, lh = fit_block(d, story["title"], SANS_B, TITLE_SIZE,
@@ -1222,19 +1251,20 @@ def main():
             yy += 3
     HEIGHT_LOG.append(("list", yy - list_top, list_h))
 
-    # 5. DATE CHECK, one line.
-    d.rectangle([16, 970, 1008, 982], outline=INK, width=2)
-    d.rectangle([16, 970, 22, 982], fill=RED)
-    tbox(d, 30, 973, DATECHECK_TEXT, fb(SANS, 8), INK, "footer",
+    # 5. DATE CHECK, one line, in a taller strip (16 px) so the text
+    # sits clear of the box lines.
+    d.rectangle([16, 970, 1008, 986], outline=INK, width=2)
+    d.rectangle([16, 970, 22, 986], fill=RED)
+    tbox(d, 30, 974, DATECHECK_TEXT, fb(SANS, 8), INK, "footer",
          label="datecheck")
 
     # Footer (with the tag legend on the second line), raised and set
     # at 8 px so both source lines read in full (point 3).
-    tbox_c(d, W // 2, 985,
+    tbox_c(d, W // 2, 990,
            "Every story here happened or was first reported on Tuesday "
            "17 November 2026. Contested claims are marked as claims.",
            fb(SANS, 8), GREY, "footer", label="footer1")
-    tbox_c(d, W // 2, 994,
+    tbox_c(d, W // 2, 999,
            "Sources: Reuters, AP, PAHO, WHO, UN, Le Monde, CNN, UNB, "
            "UKMTO, NASA. Original drawings. Tags: CONFIRMED = verified "
            "by Reuters / AP / PAHO / WHO / UN; CLAIM = as stated by the "
