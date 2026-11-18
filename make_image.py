@@ -41,6 +41,19 @@ fits); list items 33, 36, 37 replaced with Asia/Africa stories
 to 24 years" (Mondlane) phrases removed, while Vulcan keeps "first
 stage underperformed" because the title names ULA as its source.
 
+Scene round (19 Nov 2026 ~05:17 WIB): all 15 card illustrations
+are replaced by semi-realistic scenes rendered in code
+(scenes.py, numpy + Pillow; no image model, no photo, no
+downloaded asset, no face or person). One shared engine: gradient
+sky with sunlight, fractal-noise clouds and smoke, atmospheric
+haze, soft shadows, water reflection with ripples, glow, depth of
+field, vignette and film grain; each scene renders at 2x and is
+downscaled, with a fixed seed per card. The old pictogram
+maps/scenes and their labels are gone; the location captions under
+cards 1-3 stay. All text, layout, tags and data are unchanged, and
+each scene is pasted exactly into its own box, so no text is
+covered by an illustration.
+
 A layout check runs before saving: it stops the program if any card
 title or body shrank below its set size, if any card's content
 overflows its frame, if the list does not fit, if two map pins
@@ -61,6 +74,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from coast import LAND_POLYS
+from scenes import render_scene
 
 # Render scale. 1 = the 1024x1024 entry; 2 = the native 2048x2048
 # preview. The layout code below works in 1024 units; ScaledDraw
@@ -259,342 +273,15 @@ def draw_tag(d, x, y, w, text, color, group, start=9, max_h=20):
 
 # ---- big-panel maps (wide images for cards 1-3) ----
 
-def map_kerch(d, x, y, w, h):
-    d.rectangle([x, y, x + w, y + h], fill=SEA, outline=INK, width=1)
-    # 8 px labels so RUSSIA and CRIMEA clear the bridge line: RUSSIA
-    # ends above the bridge, CRIMEA starts below it, KERCH STRAIT
-    # sits clear of both and of the ship.
-    f = fb(SANS_B, 8)
-    d.text((x + 6, y + 1), "RUSSIA", font=f, fill=INK)
-    d.text((x + 6, y + h - 10), "CRIMEA", font=f, fill=INK)
-    by = y + h * 0.50
-    d.rectangle([x, y + by - 3, x + w * 0.42, y + by + 3], fill=INK)
-    d.rectangle([x + w * 0.58, y + by - 3, x + w, y + by + 3], fill=INK)
-    d.polygon([(x + w * 0.42, y + by - 3), (x + w * 0.50, y + by + 12),
-               (x + w * 0.58, y + by - 3)], fill=RED)
-    for cx, cy, r in ((0.47, 0.28, 7), (0.52, 0.20, 5), (0.44, 0.18, 4)):
-        d.ellipse([x + w * cx - r, y + h * cy - r, x + w * cx + r,
-                   y + h * cy + r], fill=(150, 150, 150), outline=GREY)
-    d.line([(x + w * 0.42, y + by + 3), (x + w * 0.50, y + by + 12),
-            (x + w * 0.58, y + by + 3)], fill=RED, width=3)
-    d.line([(x + w * 0.50, y + by - 8), (x + w * 0.50, y + by + 12)],
-           fill=RED, width=3)
-    sx, sy = x + w * 0.28, y + h * 0.78
-    d.rectangle([sx, sy, sx + 34, sy + 5], fill=INK)
-    d.rectangle([sx + 8, sy - 4, sx + 16, sy], fill=INK)
-    # One line, clearly below the bridge line, never on it, and inside
-    # the map box even when the map is short.
-    d.text((x + w * 0.62, y + h * 0.64), "KERCH STRAIT", font=f, fill=INK)
+# ------------------------------------------------------------------
+# Illustrations: the 15 card scenes are rendered in code by
+# scenes.py (numpy + Pillow, no photo, no model, no downloaded
+# asset). Each scene is a full-bleed semi-realistic render: gradient
+# sky, fractal-noise clouds/smoke, haze, soft shadows, water
+# reflection, glow, depth of field, vignette and film grain, drawn
+# at 2x and downscaled. The old pictogram maps/scenes are gone.
+# ------------------------------------------------------------------
 
-
-def map_gulf(d, x, y, w, h):
-    d.rectangle([x, y, x + w, y + h], fill=SEA, outline=INK, width=1)
-    f = fb(SANS_B, 9)
-    d.text((x + 6, y + 2), "IRAN", font=f, fill=INK)
-    d.text((x + 6, y + h * 0.42), "BAHRAIN", font=f, fill=INK)
-    for cx, cy in ((0.59, 0.57), (0.42, 0.78), (0.85, 0.55)):
-        d.line([(x + w * cx - 6, y + h * cy - 6),
-                (x + w * cx + 6, y + h * cy + 6)], fill=RED, width=3)
-        d.line([(x + w * cx - 6, y + h * cy + 6),
-                (x + w * cx + 6, y + h * cy - 6)], fill=RED, width=3)
-    for tx0, ty0 in ((0.30, 0.72), (0.68, 0.62)):
-        d.line([(x + w * tx0 + 10, y), (x + w * tx0 + 26, y + h * ty0)],
-               fill=GREY, width=2)
-    tx0, ty0 = 0.30, 0.72
-    d.rectangle([x + w * tx0, y + h * ty0, x + w * (tx0 + 0.19),
-                 y + h * ty0 + 5], fill=INK)
-    d.rectangle([x + w * (tx0 + 0.02), y + h * ty0 - 4,
-                 x + w * (tx0 + 0.06), y + h * ty0], fill=INK)
-    d.ellipse([x + w * (tx0 + 0.03), y + h * ty0 - 10,
-               x + w * (tx0 + 0.08), y + h * ty0 - 1],
-              fill=(255, 150, 40))
-    d.ellipse([x + w * (tx0 + 0.04), y + h * ty0 - 7,
-               x + w * (tx0 + 0.07), y + h * ty0 - 2], fill=RED)
-    # QESHM left of the middle X mark (clear of it, the flame and the
-    # lanes), HORMUZ lifted off the bottom edge (clear of both X marks
-    # and the second lane's foot): both inside the box, overlapped by
-    # nothing.
-    d.text((x + w * 0.42, y + h * 0.06), "QESHM", font=f, fill=INK)
-    d.text((x + w * 0.64, y + h - 11), "HORMUZ", font=f, fill=INK)
-
-
-def map_quad(d, x, y, w, h):
-    flags = [
-        ((178, 34, 34), (255, 255, 255), (0, 40, 104), "US"),
-        ((255, 153, 51), (255, 255, 255), (19, 136, 8), "INDIA"),
-        ((255, 255, 255), (188, 0, 45), (255, 255, 255), "JAPAN"),
-        ((0, 40, 104), (255, 255, 255), (255, 0, 0), "AUSTRALIA"),
-    ]
-    d.rectangle([x, y, x + w, y + h], fill=CARD, outline=INK, width=1)
-    cw = w / 4
-    # Flags use most of the height; the labels sit directly below
-    # them. The location dots and baseline are gone: in a 28-32 px
-    # strip they sat on top of the labels, and the four flags already
-    # name the four countries.
-    fh = h - 12
-    fy = y + 2
-    f = fb(SANS_B, 8)
-    for i, (c1, c2, c3, name) in enumerate(flags):
-        fx = x + i * cw + 6
-        fw = cw - 12
-        d.rectangle([fx, fy, fx + fw, fy + fh], outline=INK, width=1)
-        if i == 0:
-            for s in range(3):
-                d.rectangle([fx, fy + s * (fh // 3), fx + fw,
-                             fy + (s + 1) * (fh // 3)],
-                            fill=c1 if s % 2 == 0 else c2)
-            d.rectangle([fx, fy, fx + fw * 0.4, fy + fh * 0.6], fill=c3)
-        elif i == 1:
-            for s in range(3):
-                d.rectangle([fx, fy + s * (fh // 3), fx + fw,
-                             fy + (s + 1) * (fh // 3)],
-                            fill=(c1, c2, c3)[s])
-        elif i == 2:
-            d.rectangle([fx, fy, fx + fw, fy + fh], fill=c1)
-            r = max(3, fh // 4)
-            d.ellipse([fx + fw / 2 - r, fy + fh / 2 - r, fx + fw / 2 + r,
-                       fy + fh / 2 + r], fill=c2)
-        else:
-            d.rectangle([fx, fy, fx + fw, fy + fh], fill=c1)
-            for sx in (0.2, 0.6):
-                for sy in (0.25, 0.6):
-                    d.text((fx + fw * sx, fy + fh * sy), "+", font=f,
-                           fill=c2)
-        d.text((fx + fw / 2 - d.textlength(name, font=f) / 2, fy + fh + 1),
-               name, font=f, fill=INK)
-
-
-# ---- small-card scenes (drawn to fill the strip height h) ----
-
-def draw_scene(d, x, y, w, h, kind):
-    """Pictogram for one card, using the full strip height (about a
-    third of the card). All vertical positions are fractions of h, so
-    the drawing grows with the strip instead of stretching."""
-    if kind == "ebola":
-        # Hospital tent + bar chart (short bar: 3 months ago, no number;
-        # tall bar: now 11,000+; cases more than doubled).
-        d.polygon([(x + 2, y + h * 0.45), (x + 16, y + h * 0.08),
-                   (x + 30, y + h * 0.45)], fill=LAND, outline=INK)
-        d.rectangle([x + 7, y + h * 0.45, x + 25, y + h * 0.72],
-                    outline=INK)
-        d.line([(x + 16, y + h * 0.50), (x + 16, y + h * 0.68)], fill=RED,
-               width=2)
-        d.line([(x + 12, y + h * 0.59), (x + 20, y + h * 0.59)], fill=RED,
-               width=2)
-        base = y + h * 0.78
-        d.line([(x + 24, base), (x + w - 4, base)], fill=GREY, width=1)
-        d.rectangle([x + 30, y + h * 0.55, x + 44, base],
-                    fill=(150, 140, 120))
-        d.rectangle([x + 90, y + h * 0.15, x + 104, base], fill=RED)
-        f7, f7b = fb(SANS, 7), fb(SANS_B, 7)
-        text_center(d, x + 37, y + h * 0.76, "3 MONTHS AGO", f7, GREY)
-        text_center(d, x + 97, y + h * 0.76, "NOW 11,000+", f7b, RED)
-    elif kind == "cop31":
-        cx, cy, r = x + 16, y + h * 0.38, int(h * 0.30)
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=SEA, outline=INK)
-        d.line([(cx - r, cy), (cx + r, cy)], fill=INK, width=1)
-        d.ellipse([cx - r * 0.45, cy - r, cx + r * 0.45, cy + r],
-                  outline=INK)
-        d.polygon([(cx - r * 0.5, cy - r * 0.4), (cx + r * 0.2, cy - r * 0.7),
-                   (cx + r * 0.5, cy + r * 0.2), (cx - r * 0.2, cy + r * 0.5)],
-                  fill=LAND)
-        for i, (c1, c2, c3) in enumerate((
-                ((0, 90, 180), (255, 255, 255), (255, 255, 255)),
-                ((0, 110, 60), (255, 255, 255), (255, 200, 0)),
-                ((178, 34, 34), (255, 255, 255), (178, 34, 34)))):
-            fx = x + 44 + i * 30
-            fh = h * 0.45
-            d.rectangle([fx, y + h * 0.12, fx + 24, y + h * 0.12 + fh],
-                        fill=c1, outline=INK)
-            d.rectangle([fx, y + h * 0.12, fx + 24,
-                         y + h * 0.12 + fh / 3], fill=c2)
-            d.rectangle([fx, y + h * 0.12 + 2 * fh / 3, fx + 24,
-                         y + h * 0.12 + fh], fill=c3)
-            d.line([(fx + 12, y + h * 0.12 + fh), (fx + 12, y + h * 0.85)],
-                   fill=INK, width=1)
-    elif kind == "measles":
-        d.rectangle([x + 8, y + h * 0.28, x + 32, y + h * 0.78],
-                    fill=(255, 255, 255), outline=INK, width=2)
-        d.rectangle([x + 13, y + h * 0.18, x + 27, y + h * 0.28], fill=INK)
-        d.line([(x + 12, y + h * 0.45), (x + 28, y + h * 0.45)], fill=RED,
-               width=2)
-        d.line([(x + 12, y + h * 0.58), (x + 28, y + h * 0.58)], fill=GREY,
-               width=1)
-        d.line([(x + 48, y + h * 0.72), (x + 108, y + h * 0.28)], fill=INK,
-               width=3)
-        d.line([(x + 108, y + h * 0.28), (x + 126, y + h * 0.16)], fill=GREY,
-               width=1)
-        d.line([(x + 44, y + h * 0.76), (x + 56, y + h * 0.64)], fill=INK,
-               width=3)
-        d.line([(x + 52, y + h * 0.55), (x + 62, y + h * 0.62)], fill=RED,
-               width=2)
-    elif kind == "nvidia":
-        d.rectangle([x + 10, y + h * 0.25, x + 40, y + h * 0.75],
-                    fill=INK)
-        d.rectangle([x + 17, y + h * 0.35, x + 33, y + h * 0.65],
-                    outline=(0, 200, 100), width=2)
-        for px in (x + 14, x + 20, x + 26, x + 32):
-            d.line([(px, y + h * 0.18), (px, y + h * 0.25)], fill=INK,
-                   width=2)
-            d.line([(px, y + h * 0.75), (px, y + h * 0.82)], fill=INK,
-                   width=2)
-        d.line([(x + 52, y + h * 0.72), (x + 70, y + h * 0.58),
-                (x + 88, y + h * 0.62), (x + 106, y + h * 0.38),
-                (x + 124, y + h * 0.18)], fill=(0, 150, 60), width=3)
-        d.polygon([(x + 124, y + h * 0.18), (x + 116, y + h * 0.18),
-                   (x + 124, y + h * 0.26)], fill=(0, 150, 60))
-    elif kind == "chart":
-        # Rising stock chart, no chip: green bars plus a rising line
-        # with an arrowhead, for Nvidia's earnings (distinct from
-        # card 13's chip).
-        base = y + h * 0.82
-        d.line([(x + 8, base), (x + w - 4, base)], fill=GREY, width=1)
-        for bx, bh in ((14, 0.18), (38, 0.30), (62, 0.24), (86, 0.45),
-                       (110, 0.62)):
-            d.rectangle([x + bx, y + h * (0.82 - bh), x + bx + 14, base],
-                        fill=(0, 150, 60))
-        d.line([(x + 12, y + h * 0.68), (x + 36, y + h * 0.52),
-                (x + 60, y + h * 0.58), (x + 84, y + h * 0.34),
-                (x + 108, y + h * 0.38), (x + 126, y + h * 0.16)],
-               fill=(0, 110, 60), width=3)
-        d.polygon([(x + 126, y + h * 0.16), (x + 118, y + h * 0.16),
-                   (x + 126, y + h * 0.24)], fill=(0, 110, 60))
-    elif kind == "gaza":
-        d.rectangle([x + 8, y + h * 0.42, x + 58, y + h * 0.72],
-                    fill=(200, 170, 120), outline=INK)
-        d.rectangle([x + 58, y + h * 0.52, x + 76, y + h * 0.72],
-                    fill=(160, 130, 90), outline=INK)
-        for wx in (x + 20, x + 46, x + 66):
-            d.ellipse([wx - 5, y + h * 0.72, wx + 5, y + h * 0.82],
-                      fill=INK)
-        d.polygon([(x + 88, y + h * 0.72), (x + 102, y + h * 0.38),
-                   (x + 116, y + h * 0.72)], fill=LAND, outline=INK)
-        d.polygon([(x + 114, y + h * 0.72), (x + 124, y + h * 0.48),
-                   (x + 132, y + h * 0.72)], fill=(210, 200, 170),
-                  outline=INK)
-    elif kind == "japan":
-        d.polygon([(x + 8, y + h * 0.45), (x + 52, y + h * 0.38),
-                   (x + 68, y + h * 0.45), (x + 52, y + h * 0.52),
-                   (x + 8, y + h * 0.52)], fill=GREY)
-        d.polygon([(x + 30, y + h * 0.38), (x + 38, y + h * 0.20),
-                   (x + 44, y + h * 0.38)], fill=INK)
-        d.polygon([(x + 52, y + h * 0.52), (x + 58, y + h * 0.66),
-                   (x + 62, y + h * 0.52)], fill=INK)
-        d.polygon([(x + 62, y + h * 0.42), (x + 70, y + h * 0.38),
-                   (x + 70, y + h * 0.48), (x + 62, y + h * 0.50)],
-                  fill=RED)
-        for ex, ey, er in ((x + 96, y + h * 0.30, 10), (x + 116, y + h * 0.42, 8),
-                           (x + 88, y + h * 0.62, 9)):
-            d.ellipse([ex - er, ey - er * 0.6, ex + er, ey + er * 0.6],
-                      fill=(255, 255, 255), outline=GREY)
-    elif kind == "depardieu":
-        d.polygon([(x + 8, y + h * 0.35), (x + 30, y + h * 0.12),
-                   (x + 52, y + h * 0.35)], fill=LAND, outline=INK)
-        for cx in (x + 14, x + 26, x + 38):
-            d.line([(cx, y + h * 0.35), (cx, y + h * 0.68)], fill=INK,
-                   width=2)
-        d.rectangle([x + 8, y + h * 0.68, x + 52, y + h * 0.78], fill=INK)
-        d.line([(x + 76, y + h * 0.62), (x + 112, y + h * 0.30)], fill=INK,
-               width=3)
-        d.rectangle([x + 104, y + h * 0.22, x + 122, y + h * 0.38],
-                    fill=(150, 110, 60), outline=INK)
-        d.line([(x + 66, y + h * 0.72), (x + 128, y + h * 0.72)], fill=INK,
-               width=2)
-    elif kind == "scales":
-        # Scales of justice, no building: a post, a beam, two pans and
-        # a base, for the Depardieu verdict (distinct from card 14's
-        # parliament building).
-        cx = x + 67
-        d.line([(cx, y + h * 0.18), (cx, y + h * 0.82)], fill=INK, width=3)
-        d.line([(x + 26, y + h * 0.24), (x + 108, y + h * 0.24)], fill=INK,
-               width=3)
-        for px in (x + 26, x + 108):
-            d.line([(px, y + h * 0.24), (px, y + h * 0.48)], fill=INK,
-                   width=2)
-            d.polygon([(px - 12, y + h * 0.48), (px + 12, y + h * 0.48),
-                       (px, y + h * 0.62)], fill=LAND, outline=INK)
-        d.line([(x + 8, y + h * 0.82), (x + w - 4, y + h * 0.82)], fill=INK,
-               width=2)
-    elif kind == "apple":
-        d.rectangle([x + 10, y + h * 0.15, x + 34, y + h * 0.85],
-                    fill=INK)
-        d.rectangle([x + 13, y + h * 0.22, x + 31, y + h * 0.72],
-                    fill=(255, 255, 255))
-        d.line([(x + 20, y + h * 0.78), (x + 24, y + h * 0.78)], fill=GREY,
-               width=2)
-        for ex, ey, er in ((x + 62, y + h * 0.40, 12), (x + 82, y + h * 0.32, 10),
-                           (x + 72, y + h * 0.52, 12)):
-            d.ellipse([ex - er, ey - er * 0.7, ex + er, ey + er * 0.7],
-                      fill=(255, 255, 255), outline=GREY)
-        d.line([(x + 102, y + h * 0.62), (x + 110, y + h * 0.72),
-                (x + 126, y + h * 0.42)], fill=(0, 150, 60), width=4)
-    elif kind == "houthi":
-        d.line([(x + 4, y + h * 0.70), (x + w - 4, y + h * 0.70)], fill=INK,
-               width=3)
-        for sx in (x + 30, x + 90):
-            d.line([(sx, y + h * 0.70), (sx, y + h * 0.85)], fill=INK,
-                   width=2)
-        d.rectangle([x + 56, y + h * 0.58, x + 66, y + h * 0.70],
-                    fill=RED, outline=INK)
-        d.ellipse([x + 96, y + h * 0.22, x + 116, y + h * 0.38],
-                  fill=GREY, outline=INK)
-        for rx in (x + 88, x + 118):
-            d.line([(rx, y + h * 0.16), (rx + 12, y + h * 0.16)], fill=INK,
-                   width=2)
-        d.line([(x + 106, y + h * 0.38), (x + 106, y + h * 0.48)], fill=INK,
-               width=2)
-    elif kind == "china":
-        d.rectangle([x + 10, y + h * 0.25, x + 40, y + h * 0.75],
-                    fill=INK)
-        d.rectangle([x + 17, y + h * 0.35, x + 33, y + h * 0.65],
-                    outline=(255, 220, 0), width=2)
-        for px in (x + 14, x + 20, x + 26, x + 32):
-            d.line([(px, y + h * 0.18), (px, y + h * 0.25)], fill=INK,
-                   width=2)
-            d.line([(px, y + h * 0.75), (px, y + h * 0.82)], fill=INK,
-                   width=2)
-        d.rectangle([x + 56, y + h * 0.18, x + 126, y + h * 0.62],
-                    fill=(222, 41, 16), outline=INK)
-        for sx, sy, sr in ((x + 66, y + h * 0.28, 4), (x + 78, y + h * 0.28, 2),
-                           (x + 82, y + h * 0.38, 2), (x + 78, y + h * 0.48, 2),
-                           (x + 66, y + h * 0.48, 2)):
-            d.ellipse([sx - sr, sy - sr, sx + sr, sy + sr],
-                      fill=(255, 220, 0))
-    elif kind == "mongolia":
-        d.polygon([(x + 8, y + h * 0.38), (x + 32, y + h * 0.14),
-                   (x + 56, y + h * 0.38)], fill=LAND, outline=INK)
-        for cx in (x + 16, x + 28, x + 40):
-            d.line([(cx, y + h * 0.38), (cx, y + h * 0.68)], fill=INK,
-                   width=2)
-        d.rectangle([x + 8, y + h * 0.68, x + 56, y + h * 0.78], fill=INK)
-        d.rectangle([x + 70, y + h * 0.18, x + 124, y + h * 0.82],
-                    fill=(255, 255, 255), outline=INK)
-        for ly in (0.32, 0.46, 0.60):
-            d.line([(x + 76, y + h * ly), (x + 118, y + h * ly)], fill=GREY,
-                   width=1)
-        d.ellipse([x + 108, y + h * 0.66, x + 118, y + h * 0.76], fill=RED)
-    elif kind == "an12":
-        d.polygon([(x + 4, y + h * 0.82), (x + 30, y + h * 0.22),
-                   (x + 56, y + h * 0.82)], fill=(170, 165, 155),
-                  outline=INK)
-        d.polygon([(x + 40, y + h * 0.82), (x + 62, y + h * 0.38),
-                   (x + 84, y + h * 0.82)], fill=(200, 195, 185),
-                  outline=INK)
-        d.polygon([(x + 30, y + h * 0.22), (x + 24, y + h * 0.38),
-                   (x + 36, y + h * 0.38)], fill=(255, 255, 255))
-        d.polygon([(x + 62, y + h * 0.38), (x + 57, y + h * 0.50),
-                   (x + 67, y + h * 0.50)], fill=(255, 255, 255))
-        d.ellipse([x + 50, y + h * 0.62, x + 74, y + h * 0.82],
-                  fill=(255, 150, 40))
-        d.ellipse([x + 56, y + h * 0.68, x + 68, y + h * 0.80], fill=RED)
-        d.polygon([(x + 96, y + h * 0.30), (x + 124, y + h * 0.26),
-                   (x + 128, y + h * 0.32), (x + 96, y + h * 0.38)],
-                  fill=GREY)
-        d.polygon([(x + 108, y + h * 0.26), (x + 112, y + h * 0.14),
-                   (x + 116, y + h * 0.26)], fill=INK)
-
-
-# ---- world map from real coastline data ----
 
 PIN_LONLAT = {
     1: (36.5, 47.0), 2: (60.0, 30.0), 3: (121.0, 14.6), 4: (25.0, -2.0),
@@ -954,22 +641,13 @@ def draw_big_panel(img, d, x, y, w, h, story):
     font2, lines2, lh2 = fit_block(d, story["summary"], SANS, BODY_SIZE,
                                    BODY_SIZE, iw, 3, 33,
                                    label=f"big sub {num}", strict=True)
-    # Fixed illustration height: the wide map is 28 px in big cards,
-    # except card 3 (Quad flags), whose map is 32 px so the flags are
-    # taller and their labels clear (the dots are gone from map_quad).
-    # Drawn on a layer, so it is clipped to its box.
+    # Fixed illustration height: the rendered scene is 28 px in big
+    # cards, except card 3 (conference hall), whose scene is 32 px.
+    # The scene is a full-bleed render pasted exactly into its box,
+    # so it cannot overlap any text.
     map_h = story.get("map_h", 28)
-    HEIGHT_LOG.append((f"big card {num} map-min", map_h, 28))
-
-    def _map(ld, mx, my, mw, mh):
-        if story["scene"] == "kerch":
-            map_kerch(ld, mx, my, mw, mh)
-        elif story["scene"] == "gulf":
-            map_gulf(ld, mx, my, mw, mh)
-        else:
-            map_quad(ld, mx, my, mw, mh)
-
-    clipped_layer(img, ix, iy, iw, map_h, _map, CARD)
+    HEIGHT_LOG.append((f"big card {num} scene-min", map_h, 28))
+    img.paste(render_scene(num, sc(iw), sc(map_h)), (sc(ix), sc(iy)))
     # Location caption under the wide map.
     tbox(d, ix, iy + map_h + 1, story["caption"], fb(SANS, 8), GREY,
          group, label="caption")
@@ -1017,13 +695,11 @@ def draw_small_panel(img, d, x, y, w, h, story):
               + (3 + 20 if tag else 0))
     # Fixed illustration height (point 4): the scene is 34 px in every
     # small card, so the category, title and body start at the same y
-    # within a row. Drawn on a layer, so it is clipped to its box
-    # (point 2).
+    # within a row. The scene is a full-bleed render pasted exactly
+    # into its box, so it cannot overlap any text.
     scene_h = 34
     HEIGHT_LOG.append((f"small card {num} scene", scene_h, 34))
-    clipped_layer(img, ix, iy, iw, scene_h,
-                  lambda ld, mx, my, mw, mh: draw_scene(
-                      ld, mx, my, mw, mh, story["scene"]), CARD)
+    img.paste(render_scene(num, sc(iw), sc(scene_h)), (sc(ix), sc(iy)))
     cy = iy + scene_h + 4
     # 8 px (was 9): the standardised "MIDDLE EAST - ENERGY" tag is
     # too wide for a 134 px card at 9 px.
