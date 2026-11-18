@@ -171,10 +171,14 @@ REGION_COLORS = {
     "WORLD": (90, 84, 72),
 }
 
-SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-SERIF_B = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+# Fonts ship in this repo (fonts/, with their licence in
+# fonts/LICENSE-DejaVu.txt), so the program downloads nothing and
+# renders the same anywhere.
+_FONTS = Path(__file__).resolve().parent / "fonts"
+SERIF = str(_FONTS / "DejaVuSerif.ttf")
+SERIF_B = str(_FONTS / "DejaVuSerif-Bold.ttf")
+SANS = str(_FONTS / "DejaVuSans.ttf")
+SANS_B = str(_FONTS / "DejaVuSans-Bold.ttf")
 
 TITLE_SIZE = 12      # card titles, cards 4-15
 BODY_SIZE = 10       # card body text
@@ -329,225 +333,218 @@ REGIONS = ["EUROPE", "MIDDLE EAST", "ASIA", "AFRICA", "AMERICAS",
 
 STORIES = [
     {"id": 1, "region": "EUROPE",
-     "title": "Crimean Bridge road span falls into the sea",
-     "summary": "Second strike in two days; Zelenskyy hails it "
-     "'unprecedented'; Kremlin vows rebuild.",
+     "title": "Part of the Crimea bridge roadway plunges into the sea",
+     "summary": "Struck a second day in a row. Kyiv calls it a first of its "
+     "kind; Moscow promises a rebuild.",
      "status": "CONFIRMED", "event": "kerch-bridge",
      "cat": "EUROPE - UKRAINE WAR", "scene": "kerch", "source": "R",
-     "caption": "Kerch Strait, between Crimea and Russia",
-     "tag": "CONFIRMED: Reuters-verified footage of the collapsed span."},
+     "caption": "The strait that joins Crimea and Russia",
+     "tag": "CONFIRMED: Reuters-checked footage shows the span down."},
     {"id": 2, "region": "MIDDLE EAST",
-     "title": "US strikes Iran as tankers burn in Hormuz",
-     "summary": "Warplanes hit a missile site on Qeshm; 24 seafarers "
-     "evacuated from the burning Tara Gas.",
+     "title": "American jets hit Iran while tankers burn off Hormuz",
+     "summary": "A missile site on Qeshm was hit; 24 crew were taken off the "
+     "burning Tara Gas.",
      "status": "CLAIM", "event": "us-strikes-iran",
      "cat": "MIDDLE EAST - IRAN WAR", "scene": "gulf", "source": "AP",
-     "caption": "Strait of Hormuz, between Iran and Oman",
-     "tag": "CLAIM: Iran says tankers hit mines in Hormuz - not "
-     "independently verified."},
+     "caption": "The strait that runs between Iran and Oman",
+     "tag": "CLAIM: Iran blames mines in Hormuz for the tanker hits - not "
+     "checked on its own."},
     {"id": 3, "region": "ASIA",
-     "title": "Trump holds his first Quad summit, in Manila",
-     "summary": "First Quad meeting since his return to office; due to "
-     "meet Xi and Putin in China on Thursday.",
+     "title": "Trump gathers the Quad in Manila for the first time",
+     "summary": "The first Quad gathering of his new term; Xi and Putin are "
+     "next, in China on Thursday.",
      "status": "none", "event": "quad-summit-manila",
      "cat": "ASIA - DIPLOMACY", "scene": "quad", "source": "AP",
-     "caption": "Manila, Philippines - ASEAN and Quad summits",
      "map_h": 32,
-     "caption2": "Quad leaders: Trump, Modi, Takaichi, Albanese."},
+     "caption": "Manila, where ASEAN and the Quad both met",
+     "caption2": "Leading the Quad: Trump, Modi, Takaichi, Albanese."},
     {"id": 4, "region": "AFRICA",
-     "title": "Ebola cases in DR Congo top 11,000",
-     "summary": "WHO says 5,400 have died; it reviews the emergency "
-     "status.",
+     "title": "Congo Ebola: 11,000 cases",
+     "summary": "WHO counts 5,400 dead; status under review.",
      "status": "none", "event": "ebola-dr-congo",
      "cat": "AFRICA - HEALTH", "scene": "ebola", "source": "WHO"},
     {"id": 5, "region": "WORLD",
-     "title": "COP31 talks grind on in Antalya",
-     "summary": "Nations weigh a first draft; the talks end Friday.",
+     "title": "Antalya climate talks reach a first draft",
+     "summary": "An opening text is on the table; talks end Friday.",
      "status": "none", "event": "cop31-talks",
      "cat": "WORLD - CLIMATE", "scene": "cop31", "source": "AP"},
     {"id": 6, "region": "AMERICAS",
-     "title": "US measles-free status lost",
-     "summary": "PAHO cites a year of uninterrupted spread.",
+     "title": "US measles-free standing lost",
+     "summary": "PAHO points to a full year of spread.",
      "status": "none", "event": "us-measles-status",
      "cat": "AMERICAS - HEALTH", "scene": "measles", "source": "PAHO"},
     {"id": 7, "region": "AMERICAS",
-     "title": "Nvidia sales double to $115.8B",
-     "summary": "Shares rise after the close; Q4 forecast near $130B.",
+     "title": "Nvidia doubles to $115.8bn",
+     "summary": "Shares rose late; next quarter near $130bn.",
      "status": "none", "event": "nvidia-earnings",
      "cat": "US - BUSINESS", "scene": "chart", "source": "AP"},
     {"id": 8, "region": "MIDDLE EAST",
-     "title": "Winter rains flood Gaza shelters",
-     "summary": "UK, Australia, Canada and Italy urge Israel to open "
-     "crossings.",
+     "title": "Rain floods shelters across Gaza",
+     "summary": "Four allies press Israel to open the crossings.",
      "status": "none", "event": "gaza-aid-call",
      "cat": "MIDDLE EAST - GAZA", "scene": "gaza", "source": "AP"},
     {"id": 9, "region": "ASIA",
-     "title": "Japan scrambles jets",
-     "summary": "Russian aircraft violated airspace.",
+     "title": "Japan sends jets up after airspace breach",
+     "summary": "Russian planes entered Japanese airspace.",
      "status": "none", "event": "japan-jets",
      "cat": "ASIA - POLITICS", "scene": "japan", "source": "AP"},
     {"id": 10, "region": "EUROPE",
-     "title": "Depardieu admits sexual assault",
-     "summary": "French actor drops his appeal in Paris.",
+     "title": "Depardieu concedes assault, ends appeal",
+     "summary": "The French actor withdrew his Paris appeal.",
      "status": "none", "event": "depardieu-appeal",
      "cat": "EUROPE - COURTS", "scene": "scales", "source": "AP"},
     {"id": 11, "region": "AMERICAS",
-     "title": "Apple outage fixed",
-     "summary": "iCloud sign-ins and the App Store back up.",
+     "title": "Apple restores iCloud and App Store",
+     "summary": "Sign-ins and the store are working again.",
      "status": "none", "event": "apple-outage",
      "cat": "AMERICAS - TECH", "scene": "apple", "source": "AP"},
     {"id": 12, "region": "MIDDLE EAST",
-     "title": "Houthi drones hit Saudi pipeline",
-     "summary": "Five drones aimed at Riyadh pumping stations.",
+     "title": "Drones strike a Saudi oil pipeline",
+     "summary": "Five drones hit pumping stations near Riyadh.",
      "status": "CLAIM", "event": "houthi-drones-saudi",
      "cat": "MIDDLE EAST - ENERGY", "scene": "houthi", "source": "R",
-     "tag": "HOUTHI CLAIM - no Saudi confirmation."},
+     "tag": "HOUTHI CLAIM - no Riyadh confirmation."},
     {"id": 13, "region": "ASIA",
-     "title": "China rejects US chip curbs",
-     "summary": "Beijing hits back at the cloud-access rule.",
+     "title": "Beijing pushes back on US chip limits",
+     "summary": "China answered the new cloud-access restriction.",
      "status": "none", "event": "china-chip-curbs",
      "cat": "ASIA - TRADE", "scene": "china", "source": "R"},
     {"id": 14, "region": "ASIA",
-     "title": "Mongolia president will resign",
-     "summary": "Denies $25m bribe claim; MPs must accept.",
+     "title": "Mongolia's president steps down",
+     "summary": "He denies a $25m bribe claim; parliament must agree.",
      "status": "none", "event": "mongolia-resignation",
      "cat": "ASIA - POLITICS", "scene": "mongolia", "source": "AP"},
     {"id": 15, "region": "ASIA",
-     "title": "An-12 crash in Siberia kills 19",
-     "summary": "Plane down near Kemerovo; ministry blames a fault.",
+     "title": "Siberia plane crash kills 19",
+     "summary": "An An-12 came down near Kemerovo; officials blame a fault.",
      "status": "none", "event": "an12-crash",
      "cat": "ASIA - AIR CRASH", "scene": "an12", "source": "AP"},
     {"id": 16, "region": "MIDDLE EAST",
-     "title": "(as reported) Lebanon: Israeli airstrikes, shelling, "
-     "detonations.",
-     "summary": "Israeli airstrikes, shelling and detonations were "
-     "reported in Lebanon.",
+     "title": "(as reported) Lebanon: Israeli strikes, shelling and blasts.",
+     "summary": "Israeli strikes, shelling and blasts were reported in Lebanon.",
      "status": "none", "event": "lebanon-strikes", "source": "R"},
     {"id": 17, "region": "MIDDLE EAST",
-     "title": "UKMTO reports a second tanker strike north of Khasab, "
-     "Oman.",
-     "summary": "UKMTO reported a second tanker strike north of Khasab, "
-     "Oman.",
+     "title": "A second tanker was hit north of Khasab, Oman, UKMTO says.",
+     "summary": "UKMTO said a second tanker was hit north of Khasab, Oman.",
      "status": "none", "event": "second-tanker-khasab", "source": "UKMTO"},
     {"id": 18, "region": "AMERICAS",
-     "title": "JPMorgan: service restored after Monday's outage.",
-     "summary": "Chase said transactions were back to normal after "
-     "Monday's software bug.",
+     "title": "JPMorgan: services back after Monday's outage.",
+     "summary": "Chase said services were back to normal after Monday's "
+     "software bug.",
      "status": "none", "event": "jpmorgan-outage", "source": "AP"},
     {"id": 19, "region": "AMERICAS",
-     "title": "Wall Street: S&P 500 -1%, Dow -1.6%, Nasdaq -0.7%.",
-     "summary": "Wall Street fell: the S&P 500 lost 1%, the Dow 1.6% "
-     "and the Nasdaq 0.7%.",
+     "title": "US stocks slide: S&P 500 -1%, Dow -1.6%, Nasdaq -0.7%.",
+     "summary": "US stocks slid: the S&P 500 fell 1%, the Dow 1.6% and the "
+     "Nasdaq 0.7%.",
      "status": "none", "event": "wall-street-falls", "source": "AP"},
     {"id": 20, "region": "AMERICAS",
-     "title": "Nvidia board will not reinstate Jensen Huang as CEO.",
-     "summary": "Nvidia's board will not reinstate Jensen Huang as CEO.",
+     "title": "Nvidia's board rules out bringing Huang back as chief.",
+     "summary": "Nvidia's board ruled out bringing Jensen Huang back as chief "
+     "executive.",
      "status": "none", "event": "nvidia-board-ceo", "source": "AP"},
     {"id": 21, "region": "MIDDLE EAST",
-     "title": "Dubai airports: 50.4M passengers in 9 months, down 28.1%.",
-     "summary": "Dubai airports handled 50.4 million passengers in nine "
-     "months, down 28.1%.",
+     "title": "Dubai airports handled 50.4m travellers in nine months, 28.1% "
+     "fewer.",
+     "summary": "Dubai airports handled 50.4 million travellers in nine months, "
+     "28.1% fewer than before.",
      "status": "none", "event": "dubai-airports", "source": "AP"},
     {"id": 22, "region": "MIDDLE EAST",
-     "title": "Yemen: government forces pull back toward Aden as Houthis "
-     "advance.",
-     "summary": "Yemeni government forces pulled back toward Aden as "
-     "Houthi forces advanced.",
+     "title": "Yemen's army falls back toward Aden as Houthi fighters push "
+     "on.",
+     "summary": "Yemen's army fell back toward Aden as Houthi fighters pushed "
+     "on.",
      "status": "none", "event": "yemen-pullback", "source": "AP"},
     {"id": 23, "region": "EUROPE",
-     "title": "Five EU states plan a migrant return hub in Rwanda.",
-     "summary": "Five EU states plan a migrant return hub in Rwanda.",
+     "title": "Five EU countries plan a Rwanda hub for returning migrants.",
+     "summary": "Five EU countries plan a hub in Rwanda for returning migrants.",
      "status": "none", "event": "eu-rwanda-hub", "source": "AP"},
     {"id": 24, "region": "EUROPE",
-     "title": "UK sanctions 8 firms over West Bank settlements; "
-     "aid-blocker too.",
-     "summary": "Britain froze assets of eight firms building West "
-     "Bank settlements and of Tzav 9, which blocks Gaza aid.",
+     "title": "Britain sanctions 8 firms over West Bank building, plus an "
+     "aid-blocker.",
+     "summary": "Britain froze the assets of eight firms building in the West "
+     "Bank, and of Tzav 9, which blocks Gaza aid.",
      "status": "none", "event": "uk-westbank-sanctions", "source": "AP"},
     {"id": 25, "region": "ASIA",
-     "title": "Xi, Carney agree tariff cuts; China eases curbs on "
-     "Canadian pork, seafood.",
-     "summary": "China will cut tariffs on C$400m of Canadian pork and "
-     "seafood; Canada extends steel and aluminium relief.",
+     "title": "Xi and Carney agree to cut tariffs; China loosens curbs on "
+     "Canadian pork and seafood.",
+     "summary": "China will cut tariffs on C$400m of Canadian pork and seafood; "
+     "Canada extends steel and aluminium relief.",
      "status": "none", "event": "xi-carney-tariffs", "source": "R"},
     {"id": 26, "region": "AFRICA",
-     "title": "Mondlane goes on trial in Mozambique; faces five charges.",
-     "summary": "Opposition leader Venancio Mondlane faces five charges "
-     "over the deadly 2024 election protests.",
+     "title": "Mondlane stands trial in Mozambique on five charges.",
+     "summary": "Opposition leader Venancio Mondlane stands trial on five "
+     "charges over the deadly 2024 election protests.",
      "status": "none", "event": "mondlane-trial", "source": "AP"},
     {"id": 27, "region": "AMERICAS",
-     "title": "ULA: Vulcan's first stage underperformed; 40 Amazon "
-     "satellites lost.",
-     "summary": "ULA said the first stage underperformed just after "
-     "liftoff in Sunday's failure.",
+     "title": "ULA: Vulcan's first stage fell short; 40 Amazon satellites "
+     "lost.",
+     "summary": "ULA said the first stage fell short just after liftoff in "
+     "Sunday's failure.",
      "status": "none", "event": "vulcan-failure", "source": "AP"},
     {"id": 28, "region": "OCEANIA",
-     "title": "Cyclone Xavier batters the Northern Cook Islands.",
-     "summary": "Cyclone Xavier battered the Northern Cook Islands.",
+     "title": "Cyclone Xavier hits the Northern Cook Islands.",
+     "summary": "Cyclone Xavier hit the Northern Cook Islands.",
      "status": "none", "event": "cyclone-xavier", "source": "AP"},
     {"id": 29, "region": "WORLD",
-     "title": "Voyager 1 nears one light-day from Earth; crosses early "
+     "title": "Voyager 1 nears a light-day from Earth; it crosses early "
      "Wednesday.",
-     "summary": "Voyager 1 nears one light-day from Earth and crosses "
-     "early Wednesday.",
+     "summary": "Voyager 1 nears one light-day from Earth and crosses early "
+     "Wednesday.",
      "status": "none", "event": "voyager-1", "source": "NASA"},
     {"id": 30, "region": "AFRICA",
-     "title": "UN verifies 2,230 civilian deaths in Sudan; drones caused "
-     "most.",
-     "summary": "The UN verified 2,230 civilian deaths in Sudan, most "
-     "caused by drones.",
+     "title": "UN confirms 2,230 civilian deaths in Sudan, most by drone.",
+     "summary": "The UN confirmed 2,230 civilian deaths in Sudan, most caused "
+     "by drones.",
      "status": "none", "event": "sudan-civilian-deaths", "source": "UN"},
     {"id": 31, "region": "MIDDLE EAST",
-     "title": "Israel: Matan Kahana elected Knesset speaker, 66-52.",
-     "summary": "Matan Kahana was elected Knesset speaker by 66 votes "
-     "to 52.",
+     "title": "Israel: Kahana wins Knesset speaker vote, 66-52.",
+     "summary": "Matan Kahana won the Knesset speaker vote by 66 to 52.",
      "status": "none", "event": "kahana-speaker", "source": "AP"},
     {"id": 32, "region": "EUROPE",
-     "title": "Moldova shuts airspace as 7 drones cross in; 5 crash near "
+     "title": "Moldova closes its skies as 7 drones enter; 5 come down by "
      "villages.",
-     "summary": "Moldova shut its airspace as seven drones crossed in; "
-     "five crashed near villages.",
+     "summary": "Moldova closed its airspace as seven drones entered; five came "
+     "down near villages.",
      "status": "none", "event": "moldova-drones", "source": "AP"},
     {"id": 33, "region": "ASIA",
-     "title": "Bangladesh: police fire tear gas at garment workers "
-     "demanding higher pay.",
-     "summary": "Police fired tear gas at garment workers around Dhaka "
-     "demanding a Tk 30,000 minimum wage, up from Tk 12,500.",
-     "status": "none", "event": "bangladesh-garment-protests",
-     "source": "TH"},
+     "title": "Bangladesh: police use tear gas on garment workers seeking "
+     "higher pay.",
+     "summary": "Police used tear gas on garment workers around Dhaka seeking a "
+     "Tk 30,000 minimum wage, up from Tk 12,500.",
+     "status": "none", "event": "bangladesh-garment-protests", "source": "TH"},
     {"id": 34, "region": "EUROPE",
-     "title": "France: wage protests draw 146,000; unions demand higher "
-     "pay.",
-     "summary": "Protests for higher wages drew 146,000 people across "
-     "France; 28,000 marched in Paris.",
+     "title": "France: 146,000 join wage protests; unions want higher pay.",
+     "summary": "Wage protests drew 146,000 people across France; 28,000 "
+     "marched in Paris.",
      "status": "none", "event": "france-wage-protests", "source": "LM"},
     {"id": 35, "region": "EUROPE",
-     "title": "Russia: no European seat at next Ukraine talks, aide says.",
-     "summary": "Moscow has not agreed to European participation in the "
-     "next round of Ukraine talks, aide Yuri Ushakov said.",
+     "title": "Russia: no place for Europe at the next Ukraine talks, aide "
+     "says.",
+     "summary": "Moscow has not agreed to a European role in the next round of "
+     "Ukraine talks, aide Yuri Ushakov said.",
      "status": "none", "event": "russia-europe-talks", "source": "R"},
     {"id": 36, "region": "ASIA",
-     "title": "India: bus falls 100m into gorge in Uttarakhand; 8 "
-     "killed, 26 hurt.",
-     "summary": "A bus carrying 34 people fell 100 metres into a gorge "
-     "near Gular bridge in Tehri Garhwal early Tuesday; 8 were killed "
-     "and 26 hurt.",
+     "title": "India: bus plunges 100m into a Uttarakhand gorge; 8 dead, 26 "
+     "hurt.",
+     "summary": "A bus carrying 34 people plunged 100 metres into a gorge near "
+     "Gular bridge in Tehri Garhwal early Tuesday; 8 were killed and "
+     "26 hurt.",
      "status": "none", "event": "uttarakhand-bus-crash", "source": "PTI"},
     {"id": 37, "region": "AFRICA",
-     "title": "Nigeria: Tinubu frees 78 suspects held over convoy "
+     "title": "Nigeria: Tinubu pardons 78 suspects held over the convoy "
      "attack.",
-     "summary": "President Tinubu granted clemency to 78 suspects "
-     "arrested over the stoning of his convoy in Abuja on Friday.",
+     "summary": "President Tinubu pardoned 78 suspects arrested over the "
+     "stoning of his convoy in Abuja on Friday.",
      "status": "none", "event": "tinubu-frees-suspects", "source": "AP"},
     {"id": 38, "region": "WORLD",
-     "title": "Pattinson named the new James Bond.",
-     "summary": "British actor Robert Pattinson was named as the new "
-     "James Bond.",
+     "title": "Pattinson picked as the next James Bond.",
+     "summary": "British actor Robert Pattinson was picked as the next James "
+     "Bond.",
      "status": "none", "event": "pattinson-james-bond", "source": "AP"},
     {"id": 39, "region": "ASIA",
-     "title": "Dhaka tops world's most polluted cities; AQI 292.",
-     "summary": "Dhaka ranked first among the world's most polluted "
-     "cities on Tuesday morning, with an AQI of 292.",
+     "title": "Dhaka leads the world's most polluted cities; AQI 292.",
+     "summary": "Dhaka led the world's most polluted cities on Tuesday morning, "
+     "with an AQI of 292.",
      "status": "none", "event": "dhaka-air-pollution", "source": "UNB"},
 ]
 
@@ -603,16 +600,15 @@ NUMBERS = [
     ("50.4m", "Dubai passengers, down 28.1%", INK, ""),
 ]
 
-WHY_TEXT = ("A Tuesday of falling bridges, burning tankers and a 26-year "
-            "health milestone lost.")
+WHY_TEXT = ("A bridge falls to the sea, tankers burn, and a 26-year run "
+            "of good health news ends.")
 
-THREAD_TEXT = ("Monday, Russia hit Kyiv's two Dnipro bridges - Tuesday, "
-               "Ukraine answered by dropping the Kerch road span.")
+THREAD_TEXT = ("Russia struck Kyiv's two Dnipro crossings on Monday; on "
+               "Tuesday, Ukraine brought down the Kerch road span in reply.")
 
-DATECHECK_TEXT = ("DATE CHECK - left out as earlier news: COP31's first "
-                  "draft (16 Nov) - Grammy nominations announced (16 Nov) "
-                  "- US chip-export rule (16 Nov) - Guinea gold-mining "
-                  "sentences (16 Nov).")
+DATECHECK_TEXT = ("DATES CHECKED - not from 17 Nov: COP31's first draft "
+                  "(16 Nov) - Grammy nominations (16 Nov) - US chip-export "
+                  "rule (16 Nov) - Guinea gold-mining sentences (16 Nov).")
 
 
 # ---- card drawers (uniform title 12 px, body 10 px; big titles 17 px) ----
@@ -798,7 +794,7 @@ def main():
     d.rectangle([10, 10, W - 11, H - 11], outline=INK, width=4)
 
     # Top kicker (story count and region count come from the list).
-    tbox(d, 16, 14, "THE WORLD'S NEWS IN ONE PICTURE", fb(SANS_B, 13),
+    tbox(d, 16, 14, "A DAY OF WORLD NEWS, IN ONE FRAME", fb(SANS_B, 13),
          RED, "header", label="kicker")
     rw = d.textlength(kicker_right, font=fb(SANS_B, 13))
     tbox(d, 1008 - rw, 14, kicker_right, fb(SANS_B, 13), INK, "header",
@@ -872,7 +868,7 @@ def main():
         draw_big_panel(img, d, 16 + i * 335, 122, 322, 164, CARDS[i])
 
     # 3. THE DAY'S THREAD line (wider gap above it, point 2).
-    label = "THE DAY'S THREAD: "
+    label = "HOW THE DAY UNFOLDED: "
     lw = d.textlength(label, font=fb(SANS_B, 10))
     tbox(d, 16, 294, label, fb(SANS_B, 10), RED, "header", label="thread")
     tbox(d, 16 + lw, 294, THREAD_TEXT, fb(SANS, 10), INK, "header",
@@ -890,7 +886,7 @@ def main():
     mx, my, mw, mh = 16, 619, 486, 348
     d.rectangle([mx, my, mx + mw, my + mh], fill=CARD, outline=INK, width=2)
     d.rectangle([mx, my, mx + mw, my + 5], fill=RED)
-    section_title(d, mx + 12, my + 12, "WHERE IT HAPPENED")
+    section_title(d, mx + 12, my + 12, "WHERE THE STORIES SIT")
     draw_world_map(img, d, mx + 12, my + 32, mw - 24, 296)
     leg_font = fb(SANS_B, 8)
     leg_w = 0
@@ -910,7 +906,7 @@ def main():
     lx, ly, lw, lh = 514, 619, 494, 348
     d.rectangle([lx, ly, lx + lw, ly + lh], fill=CARD, outline=INK, width=2)
     d.rectangle([lx, ly, lx + lw, ly + 5], fill=RED)
-    section_title(d, lx + 12, ly + 12, "ALSO ON TUESDAY 17 NOVEMBER")
+    section_title(d, lx + 12, ly + 12, "THE REST OF TUESDAY, 17 NOVEMBER")
     list_top, list_h = ly + 30, lh - 34
     yy = list_top
     for gi, (region, items) in enumerate(ALSO_BY_REGION):
@@ -937,14 +933,14 @@ def main():
     # Footer (with the tag legend on the second line), raised and set
     # at 8 px so both source lines read in full (point 3).
     tbox_c(d, W // 2, 990,
-           "Every story here happened or was first reported on Tuesday "
-           "17 November 2026. Contested claims are marked as claims.",
+           "Each item below took place, or was first reported, on Tuesday "
+           "17 November 2026. Anything still disputed is labelled a claim.",
            fb(SANS, 8), GREY, "footer", label="footer1")
     tbox_c(d, W // 2, 999,
-           "Sources: Reuters, AP, PAHO, WHO, UN, Le Monde, CNN, UNB, "
-           "UKMTO, NASA. Original drawings. Tags: CONFIRMED = verified "
-           "by Reuters / AP / PAHO / WHO / UN; CLAIM = as stated by the "
-           "source, not independently verified.",
+           "Reporting: Reuters, AP, PAHO, WHO, UN, Le Monde, CNN, UNB, "
+           "UKMTO, NASA. Pictures drawn for this page. CONFIRMED = "
+           "verified by a wire; CLAIM = the source's word, not "
+           "checked alone.",
            fb(SANS, 8), GREY, "footer", label="footer2")
 
     check_layout()

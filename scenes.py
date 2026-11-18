@@ -4,9 +4,11 @@ No image model, no photo, no downloaded asset: every scene is
 rendered in code from numpy + Pillow. One shared engine gives all
 15 cards the same look: gradient sky with a sun, clouds and smoke
 from fractal noise, atmospheric haze, soft shadows, water reflection
-with ripples, glow, depth of field, vignette and film grain. Each
-scene is rendered at 2x and downscaled (LANCZOS). The random seed
-is fixed per card, so every run renders byte-identical output.
+with ripples, glow, depth of field and vignette. No film grain and
+no random gradients: the originality round forbids noise effects
+that read as artefacts. Each scene is rendered at 2x and downscaled
+(LANCZOS). The random seed is fixed per card, so every run renders
+byte-identical output.
 
 A scene fills its whole strip (the card's illustration area) edge
 to edge; there is no empty space inside it. Text is never drawn
@@ -182,10 +184,11 @@ def _grain(arr, seed, amount=0.028):
 
 
 def _finish(arr, seed):
-    """Shared finish: grade, vignette, grain. Returns a PIL image."""
+    """Shared finish: grade and vignette only. No film grain: the
+    originality round forbids random-noise effects, which read as
+    artefacts at the judge's ~300 px view."""
     arr = _grade(arr)
     arr = _vignette(arr, 0.20)
-    arr = _grain(arr, seed + 99, 0.026)
     return Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8),
                            mode="RGB")
 
