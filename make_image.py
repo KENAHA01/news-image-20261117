@@ -1,27 +1,46 @@
-"""Draw the rebuilt front page for news-image-20261117 (1024x1024 PNG).
+"""Draw the upgraded front page for news-image-20261117 (1024x1024 PNG).
 
-Two stages. Stage 1: ONE data list, STORIES, with 39 unique stories
-from Tuesday 17 November 2026 (id, region, title, summary, status,
-event); check_stories() stops the program on any duplicate id, event
-or title. Stage 2: render from that list only - cards are ids 1-15,
-the "Also on" list is ids 16-39, numbers come from id, and the header
-("39 stories") and the per-region counts are computed from the list.
-Uniform fonts: one title size (12 px bold) and one body size (10 px)
-on every card, list font 11 px (>= body); wording is shortened where
-needed, the font is never shrunk. Every card carries a small drawn
-scene; the world map uses recognisable continent outlines with pins
-placed by real longitude/latitude.
+Upgrade, built on the 39-story rebuild (0fbc7a7). The news content, the
+style and the CONFIRMED/CLAIM tags are unchanged; what changed:
 
-Newspaper style: off-white paper, ink text, dark-red accent. All stories
-from Tuesday 17 November 2026 as reported by Reuters, AP, PAHO, WHO and
-the UN. Every map, flag and scene is drawn with PIL shapes; no network,
-no external images. Text is never clipped: every block shrinks its font
-until it fits (the uniform sizes were chosen so the longest texts fit).
+- Region colours (Europe blue, Middle East red, Asia orange, Africa
+  green, Americas purple, Oceania teal, World grey) on the header
+  counts, the card category lines, the map pins and a dot on every
+  "Also on" row, with a small legend under the map.
+- Bigger illustrations: cards 4-15 fill the space their text leaves
+  (scene about a third of the card, no big empty area); cards 1-3 use
+  a wide map with a location caption underneath.
+- The world map is drawn from real coastline data (Natural Earth 110m
+  land, coast.py) and pins are placed from real lon/lat coordinates.
+- The "Also on" list is grouped by region, in region order.
+- Cards 1-3 have titles about 1.4x the other cards' (17 px vs 12 px);
+  CLAIM tags use a darker amber.
+- Every card carries its source initials (Reuters R, AP, WHO, PAHO,
+  UN, Le Monde LM, CNN, UNB, UKMTO, NASA).
+- The numbers strip marks the Dow red with a down arrow and Nvidia
+  green with an up arrow.
+- A layout check runs before saving: it stops the program if any card
+  title or body shrank below its set size, if any card's content
+  overflows its frame, if the list does not fit, if two map pins
+  collide, or if any recorded text box overlaps another or leaves
+  the page.
+
+The entry stays 1024x1024 (the bounty gate caps the file at 1024 px
+and 1 MiB). A 2048x2048 preview is rendered separately by upscaling
+(see render_2048.py); it is not the submitted file.
 """
+
+import sys
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from coast import LAND_POLYS
+
 W, H = 1024, 1024
+OUT = Path(__file__).resolve().parent / "entry.png"
+
 PAPER = (247, 243, 232)
 CARD = (255, 253, 246)
 INK = (26, 26, 26)
@@ -30,60 +49,95 @@ GREY = (90, 84, 72)
 SEA = (207, 227, 238)
 LAND = (232, 223, 200)
 TAG_GREEN = (0, 110, 60)
-TAG_AMBER = (176, 120, 0)
+TAG_CLAIM = (140, 90, 0)
 
-FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
-SERIF_B = FONT_DIR + "DejaVuSerif-Bold.ttf"
-SERIF = FONT_DIR + "DejaVuSerif.ttf"
-SANS_B = FONT_DIR + "DejaVuSans-Bold.ttf"
-SANS = FONT_DIR + "DejaVuSans.ttf"
+REGION_COLORS = {
+    "EUROPE": (0, 90, 180),
+    "MIDDLE EAST": (178, 34, 34),
+    "ASIA": (200, 100, 0),
+    "AFRICA": (0, 110, 60),
+    "AMERICAS": (110, 60, 160),
+    "OCEANIA": (0, 130, 130),
+    "WORLD": (90, 84, 72),
+}
 
-OUT = "/home/hatch/workspace/makefun/news-image-20261117-entry/entry.png"
+SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+SERIF_B = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
+SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-TITLE_SIZE = 12   # uniform headline size on every card
-BODY_SIZE = 10    # uniform sub-label size on every card
+TITLE_SIZE = 12      # card titles, cards 4-15
+BODY_SIZE = 10       # card body text
+BIG_TITLE_SIZE = 17  # card titles, cards 1-3 (about 1.4x TITLE_SIZE)
+LIST_SIZE = 10       # "Also on" rows (>= BODY_SIZE)
+LIST_HEAD_SIZE = 9   # region group headers in the list
+
+_fonts = {}
 
 
 def fb(path, size):
-    return ImageFont.truetype(path, size)
+    if (path, size) not in _fonts:
+        _fonts[(path, size)] = ImageFont.truetype(path, size)
+    return _fonts[(path, size)]
 
 
-def wrap(draw, text, font, max_w):
+def wrap(d, text, font, max_w):
     words, lines, cur = text.split(), [], ""
-    for word in words:
-        trial = f"{cur} {word}".strip()
-        if draw.textlength(trial, font=font) <= max_w or not cur:
+    for w in words:
+        trial = (cur + " " + w).strip()
+        if d.textlength(trial, font=font) <= max_w or not cur:
             cur = trial
         else:
             lines.append(cur)
-            cur = word
+            cur = w
     if cur:
         lines.append(cur)
     return lines
 
 
-def fit_block(draw, text, path, start, minimum, max_w, max_lines, max_h,
-              line_scale=1.18):
-    """Shrink the font until the wrapped text fits max_h.
+# Layout-check records. fit_block logs every strict (never-shrink) call;
+# tbox logs the bounding box of each recorded text element, grouped so
+# the check only compares boxes that share a card or a section.
+FIT_LOG = []
+HEIGHT_LOG = []
+BOXES = []
 
-    Height is the only binding constraint: lines are never dropped, so a
-    long label shrinks instead of losing its last words.
-    """
+
+def fit_block(d, text, path, start, min_size, max_w, max_lines, max_h,
+              label="", strict=False):
     size = start
-    while size >= 8:
+    while size > min_size:
         font = fb(path, size)
-        lines = wrap(draw, text, font, max_w)
-        lh = int(size * line_scale)
-        if len(lines) * lh <= max_h:
-            return font, lines, lh
+        lines = wrap(d, text, font, max_w)
+        lh = int(size * 1.17)
+        if len(lines) <= max_lines and len(lines) * lh <= max_h:
+            break
         size -= 1
-    font = fb(path, 8)
-    return font, wrap(draw, text, font, max_w), int(8 * line_scale)
+    font = fb(path, size)
+    lines = wrap(d, text, font, max_w)
+    lh = int(size * 1.17)
+    FIT_LOG.append((label, start, size, strict))
+    return font, lines, lh
 
 
 def text_center(d, cx, y, text, font, fill):
-    d.text((cx - d.textlength(text, font=font) / 2, y), text, font=font,
-           fill=fill)
+    w = d.textlength(text, font=font)
+    d.text((cx - w / 2, y), text, font=font, fill=fill)
+
+
+def tbox(d, x, y, text, font, fill, group, label=""):
+    """Draw left-aligned text and record its box for the layout check."""
+    d.text((x, y), text, font=font, fill=fill)
+    box = d.textbbox((x, y), text, font=font)
+    BOXES.append((group, label, box))
+
+
+def tbox_c(d, cx, y, text, font, fill, group, label=""):
+    """Draw centred text and record its box for the layout check."""
+    w = d.textlength(text, font=font)
+    d.text((cx - w / 2, y), text, font=font, fill=fill)
+    box = d.textbbox((cx - w / 2, y), text, font=font)
+    BOXES.append((group, label, box))
 
 
 def panel(d, x, y, w, h):
@@ -93,362 +147,324 @@ def panel(d, x, y, w, h):
 
 
 def section_title(d, x, y, text):
-    d.text((x, y), text, font=fb(SANS_B, 14), fill=RED)
+    d.text((x, y), text, font=fb(SANS_B, 13), fill=INK)
 
 
-def draw_tag(d, x, y, max_w, text, color, start=9, max_h=20):
-    """Small verification tag: coloured square + bold text, wrapped."""
-    font, lines, lh = fit_block(d, text, SANS_B, start, 8, max_w - 12,
-                                2, max_h)
-    yy = y
+def draw_tag(d, x, y, w, text, color, group, start=9, max_h=20):
+    font, lines, lh = fit_block(d, text, SANS_B, start, 7, w - 12, 3,
+                                max_h, label=f"tag {group}")
     for ln in lines:
-        d.rectangle([x, yy + 3, x + 7, yy + 10], fill=color)
-        d.text((x + 11, yy), ln, font=font, fill=color)
-        yy += lh
-    return yy
+        tbox(d, x, y, ln, font, color, group, label="tag")
+        y += lh
+    return y
 
 
-# ---- big drawn maps for row 1 ----
+# ---- big-panel maps (wide images for cards 1-3) ----
 
 def map_kerch(d, x, y, w, h):
     d.rectangle([x, y, x + w, y + h], fill=SEA, outline=INK, width=1)
-    d.polygon([(x, y), (x + w, y), (x + w, y + h * 0.28),
-               (x + w * 0.62, y + h * 0.34), (x + w * 0.38, y + h * 0.28),
-               (x, y + h * 0.34)], fill=LAND)
-    d.polygon([(x, y + h), (x + w, y + h), (x + w, y + h * 0.66),
-               (x + w * 0.6, y + h * 0.6), (x + w * 0.4, y + h * 0.66),
-               (x, y + h * 0.6)], fill=LAND)
-    by = y + h * 0.45
-    # Bridge, broken in the middle; the fallen span drops into the sea.
-    d.line([(x + 6, by), (x + w * 0.42, by)], fill=INK, width=4)
-    d.line([(x + w * 0.42, by), (x + w * 0.5, by + 8)], fill=RED, width=3)
-    d.line([(x + w * 0.5, by + 8), (x + w * 0.58, by + 2)], fill=RED,
-           width=3)
-    d.line([(x + w * 0.58, by + 2), (x + w - 6, by + 2)], fill=INK, width=4)
-    # Smoke above the break.
-    for sx, sy, r in ((0.46, 0.28, 4), (0.52, 0.20, 5), (0.58, 0.28, 4)):
-        d.ellipse([x + w * sx - r, y + h * sy - r, x + w * sx + r,
-                   y + h * sy + r], fill=(140, 135, 125))
-    # Small ship below the bridge.
-    sx0, sy0 = x + w * 0.28, y + h * 0.78
-    d.polygon([(sx0, sy0), (sx0 + 34, sy0), (sx0 + 28, sy0 + 5),
-               (sx0 + 6, sy0 + 5)], fill=INK)
-    d.line([(sx0 + 17, sy0), (sx0 + 17, sy0 - 7)], fill=INK, width=2)
-    # Red X at the break.
-    cx, cy = x + w * 0.5, by + 5
-    d.line([(cx - 6, cy - 6), (cx + 6, cy + 6)], fill=RED, width=3)
-    d.line([(cx - 6, cy + 6), (cx + 6, cy - 6)], fill=RED, width=3)
     f = fb(SANS_B, 9)
     d.text((x + 6, y + 2), "RUSSIA", font=f, fill=INK)
     d.text((x + 6, y + h - 12), "CRIMEA", font=f, fill=INK)
+    by = y + h * 0.45
+    d.rectangle([x, y + by - 3, x + w * 0.42, y + by + 3], fill=INK)
+    d.rectangle([x + w * 0.58, y + by - 3, x + w, y + by + 3], fill=INK)
+    d.polygon([(x + w * 0.42, y + by - 3), (x + w * 0.50, y + by + 12),
+               (x + w * 0.58, y + by - 3)], fill=RED)
+    for cx, cy, r in ((0.47, 0.28, 7), (0.52, 0.20, 5), (0.44, 0.18, 4)):
+        d.ellipse([x + w * cx - r, y + h * cy - r, x + w * cx + r,
+                   y + h * cy + r], fill=(150, 150, 150), outline=GREY)
+    d.line([(x + w * 0.42, y + by + 3), (x + w * 0.50, y + by + 12),
+            (x + w * 0.58, y + by + 3)], fill=RED, width=3)
+    d.line([(x + w * 0.50, y + by - 8), (x + w * 0.50, y + by + 12)],
+           fill=RED, width=3)
+    sx, sy = x + w * 0.28, y + h * 0.78
+    d.rectangle([sx, sy, sx + 34, sy + 5], fill=INK)
+    d.rectangle([sx + 8, sy - 4, sx + 16, sy], fill=INK)
     # One line, clearly below the bridge line, never on it, and inside
-    # the map box even when the map is only 30 px tall.
+    # the map box even when the map is short.
     d.text((x + w * 0.62, y + h * 0.64), "KERCH STRAIT", font=f, fill=INK)
 
 
 def map_gulf(d, x, y, w, h):
     d.rectangle([x, y, x + w, y + h], fill=SEA, outline=INK, width=1)
-    d.polygon([(x, y), (x + w, y), (x + w, y + h * 0.3),
-               (x + w * 0.55, y + h * 0.38), (x, y + h * 0.3)], fill=LAND)
-    d.ellipse([x + w * 0.52, y + h * 0.52, x + w * 0.66, y + h * 0.62],
-              fill=LAND)
-    d.ellipse([x + w * 0.2, y + h * 0.55, x + w * 0.26, y + h * 0.61],
-              fill=LAND)
-    for sx, sy in ((0.59, 0.57), (0.42, 0.78), (0.85, 0.55)):
-        cx, cy = x + w * sx, y + h * sy
-        d.line([(cx - 6, cy), (cx + 6, cy)], fill=RED, width=2)
-        d.line([(cx, cy - 6), (cx, cy + 6)], fill=RED, width=2)
-    # Missile trails from the top edge toward the tanker.
-    d.line([(x + w * 0.25, y + 2), (x + w * 0.33, y + h * 0.52)],
-           fill=(200, 80, 40), width=2)
-    d.line([(x + w * 0.55, y + 2), (x + w * 0.47, y + h * 0.52)],
-           fill=(200, 80, 40), width=2)
-    # Burning tanker: hull, superstructure, flame.
-    tx0, ty0 = x + w * 0.30, y + h * 0.72
-    d.polygon([(tx0, ty0), (tx0 + 32, ty0), (tx0 + 26, ty0 + 5),
-               (tx0 + 6, ty0 + 5)], fill=INK)
-    d.rectangle([tx0 + 20, ty0 - 4, tx0 + 28, ty0], fill=INK)
-    d.polygon([(tx0 + 8, ty0 - 1), (tx0 + 14, ty0 - 10),
-               (tx0 + 20, ty0 - 1)], fill=(255, 150, 40))
-    d.polygon([(tx0 + 11, ty0 - 1), (tx0 + 14, ty0 - 6),
-               (tx0 + 17, ty0 - 1)], fill=RED)
     f = fb(SANS_B, 9)
     d.text((x + 6, y + 2), "IRAN", font=f, fill=INK)
     d.text((x + 6, y + h * 0.42), "BAHRAIN", font=f, fill=INK)
+    for cx, cy in ((0.59, 0.57), (0.42, 0.78), (0.85, 0.55)):
+        d.line([(x + w * cx - 6, y + h * cy - 6),
+                (x + w * cx + 6, y + h * cy + 6)], fill=RED, width=3)
+        d.line([(x + w * cx - 6, y + h * cy + 6),
+                (x + w * cx + 6, y + h * cy - 6)], fill=RED, width=3)
+    for tx0, ty0 in ((0.30, 0.72), (0.68, 0.62)):
+        d.line([(x + w * tx0 + 10, y), (x + w * tx0 + 26, y + h * ty0)],
+               fill=GREY, width=2)
+    tx0, ty0 = 0.30, 0.72
+    d.rectangle([x + w * tx0, y + h * ty0, x + w * (tx0 + 0.19),
+                 y + h * ty0 + 5], fill=INK)
+    d.rectangle([x + w * (tx0 + 0.02), y + h * ty0 - 4,
+                 x + w * (tx0 + 0.06), y + h * ty0], fill=INK)
+    d.ellipse([x + w * (tx0 + 0.03), y + h * ty0 - 10,
+               x + w * (tx0 + 0.08), y + h * ty0 - 1],
+              fill=(255, 150, 40))
+    d.ellipse([x + w * (tx0 + 0.04), y + h * ty0 - 7,
+               x + w * (tx0 + 0.07), y + h * ty0 - 2], fill=RED)
     # QESHM right of its island, HORMUZ bottom centre: the two labels
     # must not stack on each other at this small map height, and HORMUZ
-    # must stay inside the map box when it is only 30 px tall.
+    # must stay inside the map box when it is short.
     d.text((x + w * 0.68, y + h * 0.40), "QESHM", font=f, fill=INK)
     d.text((x + w * 0.60, y + h * 0.66), "HORMUZ", font=f, fill=INK)
 
 
 def map_quad(d, x, y, w, h):
+    flags = [
+        ((178, 34, 34), (255, 255, 255), (0, 40, 104), "US"),
+        ((255, 153, 51), (255, 255, 255), (19, 136, 8), "INDIA"),
+        ((255, 255, 255), (188, 0, 45), (255, 255, 255), "JAPAN"),
+        ((0, 40, 104), (255, 255, 255), (255, 0, 0), "AUSTRALIA"),
+    ]
     d.rectangle([x, y, x + w, y + h], fill=CARD, outline=INK, width=1)
-    fw, fh = (w - 40) // 4, max(12, h - 23)
+    cw = w / 4
+    fh = max(12, h - 23)
     fy = y + 2
-    xs = [x + 8 + i * (fw + 8) for i in range(4)]
-    # US: stripes + canton
-    d.rectangle([xs[0], fy, xs[0] + fw, fy + fh], outline=INK, width=1)
-    for i in range(6):
-        d.rectangle([xs[0], fy + i * fh // 6, xs[0] + fw,
-                     fy + (i + 1) * fh // 6],
-                    fill=RED if i % 2 == 0 else CARD)
-    d.rectangle([xs[0], fy, xs[0] + fw * 0.45, fy + fh * 0.55],
-                fill=(40, 60, 140))
-    # India: saffron / white / green + wheel
-    for i, col in enumerate(((255, 153, 51), CARD, (19, 136, 8))):
-        d.rectangle([xs[1], fy + i * fh // 3, xs[1] + fw,
-                     fy + (i + 1) * fh // 3], fill=col, outline=INK, width=1)
-    d.ellipse([xs[1] + fw // 2 - 6, fy + fh // 2 - 6,
-               xs[1] + fw // 2 + 6, fy + fh // 2 + 6],
-              outline=(0, 0, 128), width=2)
-    # Japan: white + red disc
-    d.rectangle([xs[2], fy, xs[2] + fw, fy + fh], fill=CARD, outline=INK,
-                width=1)
-    d.ellipse([xs[2] + fw // 2 - 10, fy + fh // 2 - 10,
-               xs[2] + fw // 2 + 10, fy + fh // 2 + 10], fill=RED)
-    # Australia: blue + canton + stars
-    d.rectangle([xs[3], fy, xs[3] + fw, fy + fh], fill=(0, 40, 120),
-                outline=INK, width=1)
-    d.rectangle([xs[3], fy, xs[3] + fw * 0.45, fy + fh * 0.5],
-                outline=CARD, width=2)
-    d.line([(xs[3], fy + fh * 0.25), (xs[3] + fw * 0.45, fy + fh * 0.25)],
-           fill=CARD, width=2)
-    for sx, sy in ((0.7, 0.3), (0.85, 0.6), (0.65, 0.75)):
-        d.ellipse([xs[3] + fw * sx - 2, fy + fh * sy - 2,
-                   xs[3] + fw * sx + 2, fy + fh * sy + 2], fill=CARD)
     f = fb(SANS_B, 8)
-    for i, name in enumerate(("US", "INDIA", "JAPAN", "AUSTRALIA")):
-        text_center(d, xs[i] + fw / 2, fy + fh + 1, name, f, INK)
-    # Summit table with four seated figures under the flags.
+    for i, (c1, c2, c3, name) in enumerate(flags):
+        fx = x + i * cw + 6
+        fw = cw - 12
+        d.rectangle([fx, fy, fx + fw, fy + fh], outline=INK, width=1)
+        if i == 0:
+            for s in range(3):
+                d.rectangle([fx, fy + s * (fh // 3), fx + fw,
+                             fy + (s + 1) * (fh // 3)],
+                            fill=c1 if s % 2 == 0 else c2)
+            d.rectangle([fx, fy, fx + fw * 0.4, fy + fh * 0.6], fill=c3)
+        elif i == 1:
+            for s in range(3):
+                d.rectangle([fx, fy + s * (fh // 3), fx + fw,
+                             fy + (s + 1) * (fh // 3)],
+                            fill=(c1, c2, c3)[s])
+        elif i == 2:
+            d.rectangle([fx, fy, fx + fw, fy + fh], fill=c1)
+            d.ellipse([fx + fw / 2 - 4, fy + fh / 2 - 4, fx + fw / 2 + 4,
+                       fy + fh / 2 + 4], fill=c2)
+        else:
+            d.rectangle([fx, fy, fx + fw, fy + fh], fill=c1)
+            for sx in (0.2, 0.6):
+                for sy in (0.25, 0.6):
+                    d.text((fx + fw * sx, fy + fh * sy), "+", font=f,
+                           fill=c2)
+        d.text((fx + fw / 2 - d.textlength(name, font=f) / 2, fy + fh + 1),
+               name, font=f, fill=INK)
     ty = y + h - 3
-    d.line([(x + 8, ty), (x + w - 8, ty)], fill=INK, width=2)
+    d.line([(x + 4, ty), (x + w - 4, ty)], fill=INK, width=2)
     for i in range(4):
-        cx = xs[i] + fw / 2
-        d.ellipse([cx - 3, ty - 7, cx + 3, ty - 1], fill=INK)
+        cx = x + i * cw + cw / 2
+        d.ellipse([cx - 6, ty - 7, cx + 6, ty - 1], fill=INK)
+        d.rectangle([cx - 5, ty, cx + 5, ty + 2], fill=INK)
 
 
-# ---- small scene strips for the 12 smaller cards ----
+# ---- small-card scenes (drawn to fill the strip height h) ----
 
 def draw_scene(d, x, y, w, h, kind):
-    """A small drawn scene across the top of a card (strip h = 28)."""
+    """Pictogram for one card, using the full strip height (about a
+    third of the card). All vertical positions are fractions of h, so
+    the drawing grows with the strip instead of stretching."""
     if kind == "ebola":
         # Hospital tent + bar chart (short bar: 3 months ago, no number;
-        # tall bar: now 11,000+; cases more than doubled). The labels are
-        # 55 px wide each at 7 px, so the bars sit at centres 37 and 97
-        # to keep a gap between them; the tent is compact at top left.
-        # The strip is 26 px tall: bars end at y+17, labels at y+18.
-        d.polygon([(x + 2, y + 8), (x + 10, y + 1), (x + 18, y + 8)],
-                  fill=LAND, outline=INK)
-        d.rectangle([x + 5, y + 8, x + 15, y + 15], outline=INK)
-        d.line([(x + 10, y + 10), (x + 10, y + 14)], fill=RED, width=2)
-        d.line([(x + 7, y + 12), (x + 13, y + 12)], fill=RED, width=2)
-        d.line([(x + 24, y + 17), (x + w - 4, y + 17)], fill=GREY, width=1)
-        d.rectangle([x + 30, y + 11, x + 44, y + 17], fill=(150, 140, 120))
-        d.rectangle([x + 90, y + 2, x + 104, y + 17], fill=RED)
+        # tall bar: now 11,000+; cases more than doubled).
+        d.polygon([(x + 2, y + h * 0.45), (x + 16, y + h * 0.08),
+                   (x + 30, y + h * 0.45)], fill=LAND, outline=INK)
+        d.rectangle([x + 7, y + h * 0.45, x + 25, y + h * 0.72],
+                    outline=INK)
+        d.line([(x + 16, y + h * 0.50), (x + 16, y + h * 0.68)], fill=RED,
+               width=2)
+        d.line([(x + 12, y + h * 0.59), (x + 20, y + h * 0.59)], fill=RED,
+               width=2)
+        base = y + h * 0.78
+        d.line([(x + 24, base), (x + w - 4, base)], fill=GREY, width=1)
+        d.rectangle([x + 30, y + h * 0.55, x + 44, base],
+                    fill=(150, 140, 120))
+        d.rectangle([x + 90, y + h * 0.15, x + 104, base], fill=RED)
         f7, f7b = fb(SANS, 7), fb(SANS_B, 7)
-        text_center(d, x + 37, y + 18, "3 MONTHS AGO", f7, GREY)
-        text_center(d, x + 97, y + 18, "NOW 11,000+", f7b, RED)
+        text_center(d, x + 37, y + h * 0.82, "3 MONTHS AGO", f7, GREY)
+        text_center(d, x + 97, y + h * 0.82, "NOW 11,000+", f7b, RED)
     elif kind == "cop31":
-        # Globe + three flags.
-        d.ellipse([x + 5, y + 5, x + 23, y + 23], fill=SEA, outline=INK)
-        d.ellipse([x + 9, y + 9, x + 15, y + 15], fill=LAND, outline=INK)
-        d.ellipse([x + 16, y + 14, x + 21, y + 19], fill=LAND, outline=INK)
-        for i, col in enumerate(((19, 136, 8), (0, 60, 180), RED)):
-            px = x + 40 + i * 32
-            d.line([(px, y + 4), (px, y + 24)], fill=INK, width=2)
-            d.rectangle([px, y + 4, px + 16, y + 13], fill=col,
-                        outline=INK, width=1)
+        cx, cy, r = x + 16, y + h * 0.38, int(h * 0.30)
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=SEA, outline=INK)
+        d.line([(cx - r, cy), (cx + r, cy)], fill=INK, width=1)
+        d.ellipse([cx - r * 0.45, cy - r, cx + r * 0.45, cy + r],
+                  outline=INK)
+        d.polygon([(cx - r * 0.5, cy - r * 0.4), (cx + r * 0.2, cy - r * 0.7),
+                   (cx + r * 0.5, cy + r * 0.2), (cx - r * 0.2, cy + r * 0.5)],
+                  fill=LAND)
+        for i, (c1, c2, c3) in enumerate((
+                ((0, 90, 180), (255, 255, 255), (255, 255, 255)),
+                ((0, 110, 60), (255, 255, 255), (255, 200, 0)),
+                ((178, 34, 34), (255, 255, 255), (178, 34, 34)))):
+            fx = x + 44 + i * 30
+            fh = h * 0.45
+            d.rectangle([fx, y + h * 0.12, fx + 24, y + h * 0.12 + fh],
+                        fill=c1, outline=INK)
+            d.rectangle([fx, y + h * 0.12, fx + 24,
+                         y + h * 0.12 + fh / 3], fill=c2)
+            d.rectangle([fx, y + h * 0.12 + 2 * fh / 3, fx + 24,
+                         y + h * 0.12 + fh], fill=c3)
+            d.line([(fx + 12, y + h * 0.12 + fh), (fx + 12, y + h * 0.85)],
+                   fill=INK, width=1)
     elif kind == "measles":
-        # Vaccine vial + syringe.
-        d.rectangle([x + 8, y + 8, x + 20, y + 24], fill=CARD, outline=INK,
-                    width=1)
-        d.rectangle([x + 11, y + 4, x + 17, y + 8], fill=INK)
-        d.rectangle([x + 10, y + 18, x + 18, y + 22], fill=RED)
-        d.line([(x + 48, y + 20), (x + 86, y + 6)], fill=INK, width=5)
-        d.line([(x + 86, y + 6), (x + 100, y + 2)], fill=INK, width=1)
-        d.line([(x + 48, y + 20), (x + 40, y + 24)], fill=INK, width=3)
-        d.line([(x + 36, y + 20), (x + 44, y + 24)], fill=INK, width=2)
-    elif kind in ("nvidia", "china"):
-        # Chip (+ rising chart for Nvidia, + flag for China).
-        d.rectangle([x + 10, y + 6, x + 26, y + 22], fill=INK)
-        d.rectangle([x + 14, y + 10, x + 22, y + 18], outline=CARD, width=1)
-        for i in range(3):
-            d.line([(x + 13 + i * 5, y + 3), (x + 13 + i * 5, y + 6)],
-                   fill=INK, width=2)
-            d.line([(x + 13 + i * 5, y + 22), (x + 13 + i * 5, y + 25)],
-                   fill=INK, width=2)
-        if kind == "nvidia":
-            d.line([(x + 45, y + 22), (x + 62, y + 16), (x + 78, y + 18),
-                    (x + 96, y + 8), (x + 112, y + 6)], fill=RED, width=2)
-            d.polygon([(x + 112, y + 6), (x + 104, y + 4), (x + 108, y + 12)],
-                      fill=RED)
-        else:
-            d.rectangle([x + 55, y + 6, x + 85, y + 20], fill=RED,
-                        outline=INK, width=1)
-            d.ellipse([x + 59, y + 9, x + 65, y + 15], fill=(255, 220, 0))
-            d.ellipse([x + 70, y + 9, x + 74, y + 13], fill=(255, 220, 0))
-            d.ellipse([x + 70, y + 14, x + 74, y + 18], fill=(255, 220, 0))
+        d.rectangle([x + 8, y + h * 0.28, x + 32, y + h * 0.78],
+                    fill=(255, 255, 255), outline=INK, width=2)
+        d.rectangle([x + 13, y + h * 0.18, x + 27, y + h * 0.28], fill=INK)
+        d.line([(x + 12, y + h * 0.45), (x + 28, y + h * 0.45)], fill=RED,
+               width=2)
+        d.line([(x + 12, y + h * 0.58), (x + 28, y + h * 0.58)], fill=GREY,
+               width=1)
+        d.line([(x + 48, y + h * 0.72), (x + 108, y + h * 0.28)], fill=INK,
+               width=3)
+        d.line([(x + 108, y + h * 0.28), (x + 126, y + h * 0.16)], fill=GREY,
+               width=1)
+        d.line([(x + 44, y + h * 0.76), (x + 56, y + h * 0.64)], fill=INK,
+               width=3)
+        d.line([(x + 52, y + h * 0.55), (x + 62, y + h * 0.62)], fill=RED,
+               width=2)
+    elif kind == "nvidia":
+        d.rectangle([x + 10, y + h * 0.25, x + 40, y + h * 0.75],
+                    fill=INK)
+        d.rectangle([x + 17, y + h * 0.35, x + 33, y + h * 0.65],
+                    outline=(0, 200, 100), width=2)
+        for px in (x + 14, x + 20, x + 26, x + 32):
+            d.line([(px, y + h * 0.18), (px, y + h * 0.25)], fill=INK,
+                   width=2)
+            d.line([(px, y + h * 0.75), (px, y + h * 0.82)], fill=INK,
+                   width=2)
+        d.line([(x + 52, y + h * 0.72), (x + 70, y + h * 0.58),
+                (x + 88, y + h * 0.62), (x + 106, y + h * 0.38),
+                (x + 124, y + h * 0.18)], fill=(0, 150, 60), width=3)
+        d.polygon([(x + 124, y + h * 0.18), (x + 116, y + h * 0.18),
+                   (x + 124, y + h * 0.26)], fill=(0, 150, 60))
     elif kind == "gaza":
-        # Aid truck + tents.
-        d.rectangle([x + 6, y + 8, x + 30, y + 20], fill=CARD, outline=INK,
-                    width=1)
-        d.rectangle([x + 30, y + 12, x + 40, y + 20], fill=INK)
-        d.ellipse([x + 9, y + 19, x + 15, y + 25], fill=INK)
-        d.ellipse([x + 31, y + 19, x + 37, y + 25], fill=INK)
-        d.line([(x + 17, y + 11), (x + 17, y + 17)], fill=RED, width=2)
-        d.line([(x + 14, y + 14), (x + 20, y + 14)], fill=RED, width=2)
-        d.polygon([(x + 55, y + 22), (x + 68, y + 8), (x + 81, y + 22)],
-                  fill=LAND, outline=INK)
-        d.polygon([(x + 85, y + 22), (x + 97, y + 12), (x + 109, y + 22)],
-                  fill=LAND, outline=INK)
+        d.rectangle([x + 8, y + h * 0.42, x + 58, y + h * 0.72],
+                    fill=(200, 170, 120), outline=INK)
+        d.rectangle([x + 58, y + h * 0.52, x + 76, y + h * 0.72],
+                    fill=(160, 130, 90), outline=INK)
+        for wx in (x + 20, x + 46, x + 66):
+            d.ellipse([wx - 5, y + h * 0.72, wx + 5, y + h * 0.82],
+                      fill=INK)
+        d.polygon([(x + 88, y + h * 0.72), (x + 102, y + h * 0.38),
+                   (x + 116, y + h * 0.72)], fill=LAND, outline=INK)
+        d.polygon([(x + 114, y + h * 0.72), (x + 124, y + h * 0.48),
+                   (x + 132, y + h * 0.72)], fill=(210, 200, 170),
+                  outline=INK)
     elif kind == "japan":
-        # Jet + clouds.
-        s = 20
-        d.line([(x + 6, y + 12), (x + 6 + s, y + 12)], fill=INK, width=3)
-        d.polygon([(x + 6 + s * 0.5, y + 12), (x + 6 + s * 0.7, y + 4),
-                   (x + 6 + s * 0.85, y + 12)], fill=INK)
-        d.polygon([(x + 6 + s * 0.5, y + 12), (x + 6 + s * 0.7, y + 20),
-                   (x + 6 + s * 0.85, y + 12)], fill=INK)
-        d.polygon([(x + 6 + s * 0.9, y + 12), (x + 6 + s, y + 8),
-                   (x + 6 + s, y + 16)], fill=INK)
-        for cx in (58, 96):
-            d.ellipse([x + cx - 8, y + 8, x + cx + 8, y + 20], fill=CARD,
-                      outline=GREY)
-            d.ellipse([x + cx - 2, y + 4, x + cx + 12, y + 16], fill=CARD,
-                      outline=GREY)
+        d.polygon([(x + 8, y + h * 0.45), (x + 52, y + h * 0.38),
+                   (x + 68, y + h * 0.45), (x + 52, y + h * 0.52),
+                   (x + 8, y + h * 0.52)], fill=GREY)
+        d.polygon([(x + 30, y + h * 0.38), (x + 38, y + h * 0.20),
+                   (x + 44, y + h * 0.38)], fill=INK)
+        d.polygon([(x + 52, y + h * 0.52), (x + 58, y + h * 0.66),
+                   (x + 62, y + h * 0.52)], fill=INK)
+        d.polygon([(x + 62, y + h * 0.42), (x + 70, y + h * 0.38),
+                   (x + 70, y + h * 0.48), (x + 62, y + h * 0.50)],
+                  fill=RED)
+        for ex, ey, er in ((x + 96, y + h * 0.30, 10), (x + 116, y + h * 0.42, 8),
+                           (x + 88, y + h * 0.62, 9)):
+            d.ellipse([ex - er, ey - er * 0.6, ex + er, ey + er * 0.6],
+                      fill=(255, 255, 255), outline=GREY)
     elif kind == "depardieu":
-        # Courthouse + gavel.
-        d.polygon([(x + 4, y + 10), (x + 20, y + 2), (x + 36, y + 10)],
-                  fill=INK)
-        for cx in (12, 20, 28):
-            d.line([(x + cx, y + 10), (x + cx, y + 22)], fill=INK, width=2)
-        d.line([(x + 2, y + 24), (x + 38, y + 24)], fill=INK, width=2)
-        d.line([(x + 55, y + 8), (x + 75, y + 16)], fill=INK, width=5)
-        d.line([(x + 65, y + 12), (x + 85, y + 22)], fill=INK, width=3)
-        d.rectangle([x + 88, y + 21, x + 100, y + 25], fill=INK)
+        d.polygon([(x + 8, y + h * 0.35), (x + 30, y + h * 0.12),
+                   (x + 52, y + h * 0.35)], fill=LAND, outline=INK)
+        for cx in (x + 14, x + 26, x + 38):
+            d.line([(cx, y + h * 0.35), (cx, y + h * 0.68)], fill=INK,
+                   width=2)
+        d.rectangle([x + 8, y + h * 0.68, x + 52, y + h * 0.78], fill=INK)
+        d.line([(x + 76, y + h * 0.62), (x + 112, y + h * 0.30)], fill=INK,
+               width=3)
+        d.rectangle([x + 104, y + h * 0.22, x + 122, y + h * 0.38],
+                    fill=(150, 110, 60), outline=INK)
+        d.line([(x + 66, y + h * 0.72), (x + 128, y + h * 0.72)], fill=INK,
+               width=2)
     elif kind == "apple":
-        # Phone + cloud with a green check.
-        d.rounded_rectangle([x + 10, y + 3, x + 26, y + 25], radius=3,
-                            fill=INK)
-        d.rectangle([x + 13, y + 7, x + 23, y + 20], fill=CARD)
-        d.line([(x + 15, y + 22), (x + 21, y + 22)], fill=CARD, width=1)
-        d.ellipse([x + 46, y + 10, x + 58, y + 22], fill=CARD, outline=GREY)
-        d.ellipse([x + 54, y + 5, x + 68, y + 19], fill=CARD, outline=GREY)
-        d.ellipse([x + 64, y + 10, x + 76, y + 22], fill=CARD, outline=GREY)
-        d.line([(x + 84, y + 16), (x + 90, y + 22), (x + 102, y + 8)],
-               fill=(0, 140, 60), width=3)
-    elif kind == "houthis":
-        # Pipeline + drone.
-        d.rectangle([x + 4, y + 14, x + 80, y + 18], fill=GREY, outline=INK,
-                    width=1)
-        d.line([(x + 20, y + 18), (x + 20, y + 24)], fill=INK, width=2)
-        d.line([(x + 60, y + 18), (x + 60, y + 24)], fill=INK, width=2)
-        d.ellipse([x + 36, y + 8, x + 44, y + 16], outline=INK, width=2)
-        d.rectangle([x + 95, y + 10, x + 107, y + 16], fill=INK)
-        for rx, ry in ((92, 6), (110, 6), (92, 20), (110, 20)):
-            d.line([(x + rx, y + ry), (x + 101, y + 13)], fill=INK, width=1)
-            d.ellipse([x + rx - 3, y + ry - 1, x + rx + 3, y + ry + 1],
-                      outline=INK, width=1)
-        d.ellipse([x + 99, y + 11, x + 103, y + 15], fill=RED)
+        d.rectangle([x + 10, y + h * 0.15, x + 34, y + h * 0.85],
+                    fill=INK)
+        d.rectangle([x + 13, y + h * 0.22, x + 31, y + h * 0.72],
+                    fill=(255, 255, 255))
+        d.line([(x + 20, y + h * 0.78), (x + 24, y + h * 0.78)], fill=GREY,
+               width=2)
+        for ex, ey, er in ((x + 62, y + h * 0.40, 12), (x + 82, y + h * 0.32, 10),
+                           (x + 72, y + h * 0.52, 12)):
+            d.ellipse([ex - er, ey - er * 0.7, ex + er, ey + er * 0.7],
+                      fill=(255, 255, 255), outline=GREY)
+        d.line([(x + 102, y + h * 0.62), (x + 110, y + h * 0.72),
+                (x + 126, y + h * 0.42)], fill=(0, 150, 60), width=4)
+    elif kind == "houthi":
+        d.line([(x + 4, y + h * 0.70), (x + w - 4, y + h * 0.70)], fill=INK,
+               width=3)
+        for sx in (x + 30, x + 90):
+            d.line([(sx, y + h * 0.70), (sx, y + h * 0.85)], fill=INK,
+                   width=2)
+        d.rectangle([x + 56, y + h * 0.58, x + 66, y + h * 0.70],
+                    fill=RED, outline=INK)
+        d.ellipse([x + 96, y + h * 0.22, x + 116, y + h * 0.38],
+                  fill=GREY, outline=INK)
+        for rx in (x + 88, x + 118):
+            d.line([(rx, y + h * 0.16), (rx + 12, y + h * 0.16)], fill=INK,
+                   width=2)
+        d.line([(x + 106, y + h * 0.38), (x + 106, y + h * 0.48)], fill=INK,
+               width=2)
+    elif kind == "china":
+        d.rectangle([x + 10, y + h * 0.25, x + 40, y + h * 0.75],
+                    fill=INK)
+        d.rectangle([x + 17, y + h * 0.35, x + 33, y + h * 0.65],
+                    outline=(255, 220, 0), width=2)
+        for px in (x + 14, x + 20, x + 26, x + 32):
+            d.line([(px, y + h * 0.18), (px, y + h * 0.25)], fill=INK,
+                   width=2)
+            d.line([(px, y + h * 0.75), (px, y + h * 0.82)], fill=INK,
+                   width=2)
+        d.rectangle([x + 56, y + h * 0.18, x + 126, y + h * 0.62],
+                    fill=(222, 41, 16), outline=INK)
+        for sx, sy, sr in ((x + 66, y + h * 0.28, 4), (x + 78, y + h * 0.28, 2),
+                           (x + 82, y + h * 0.38, 2), (x + 78, y + h * 0.48, 2),
+                           (x + 66, y + h * 0.48, 2)):
+            d.ellipse([sx - sr, sy - sr, sx + sr, sy + sr],
+                      fill=(255, 220, 0))
     elif kind == "mongolia":
-        # Parliament building + resignation letter.
-        d.polygon([(x + 4, y + 10), (x + 28, y + 2), (x + 52, y + 10)],
-                  fill=INK)
-        for cx in (14, 28, 42):
-            d.line([(x + cx, y + 10), (x + cx, y + 22)], fill=INK, width=2)
-        d.line([(x + 2, y + 24), (x + 54, y + 24)], fill=INK, width=2)
-        d.rectangle([x + 70, y + 6, x + 100, y + 24], fill=CARD,
-                    outline=RED, width=2)
-        d.line([(x + 76, y + 12), (x + 94, y + 12)], fill=RED, width=2)
-        d.line([(x + 76, y + 18), (x + 94, y + 18)], fill=RED, width=2)
+        d.polygon([(x + 8, y + h * 0.38), (x + 32, y + h * 0.14),
+                   (x + 56, y + h * 0.38)], fill=LAND, outline=INK)
+        for cx in (x + 16, x + 28, x + 40):
+            d.line([(cx, y + h * 0.38), (cx, y + h * 0.68)], fill=INK,
+                   width=2)
+        d.rectangle([x + 8, y + h * 0.68, x + 56, y + h * 0.78], fill=INK)
+        d.rectangle([x + 70, y + h * 0.18, x + 124, y + h * 0.82],
+                    fill=(255, 255, 255), outline=INK)
+        for ly in (0.32, 0.46, 0.60):
+            d.line([(x + 76, y + h * ly), (x + 118, y + h * ly)], fill=GREY,
+                   width=1)
+        d.ellipse([x + 108, y + h * 0.66, x + 118, y + h * 0.76], fill=RED)
     elif kind == "an12":
-        # Mountains + snow + plane + small fire glow.
-        d.polygon([(x + 2, y + 26), (x + 32, y + 4), (x + 62, y + 26)],
+        d.polygon([(x + 4, y + h * 0.82), (x + 30, y + h * 0.22),
+                   (x + 56, y + h * 0.82)], fill=(170, 165, 155),
+                  outline=INK)
+        d.polygon([(x + 40, y + h * 0.82), (x + 62, y + h * 0.38),
+                   (x + 84, y + h * 0.82)], fill=(200, 195, 185),
+                  outline=INK)
+        d.polygon([(x + 30, y + h * 0.22), (x + 24, y + h * 0.38),
+                   (x + 36, y + h * 0.38)], fill=(255, 255, 255))
+        d.polygon([(x + 62, y + h * 0.38), (x + 57, y + h * 0.50),
+                   (x + 67, y + h * 0.50)], fill=(255, 255, 255))
+        d.ellipse([x + 50, y + h * 0.62, x + 74, y + h * 0.82],
+                  fill=(255, 150, 40))
+        d.ellipse([x + 56, y + h * 0.68, x + 68, y + h * 0.80], fill=RED)
+        d.polygon([(x + 96, y + h * 0.30), (x + 124, y + h * 0.26),
+                   (x + 128, y + h * 0.32), (x + 96, y + h * 0.38)],
                   fill=GREY)
-        d.polygon([(x + 58, y + 26), (x + 92, y + 2), (x + 128, y + 26)],
-                  fill=GREY)
-        d.ellipse([x + 2, y + 20, x + w - 2, y + 28], fill=CARD,
-                  outline=INK, width=1)
-        d.ellipse([x + 100, y + 8, x + 108, y + 16], fill=(255, 150, 40))
-        d.ellipse([x + 102, y + 10, x + 106, y + 14], fill=RED)
-        px, py = x + 38, y + 10
-        d.polygon([(px, py), (px + 30, py - 1), (px + 38, py + 2),
-                   (px + 30, py + 4), (px, py + 4)], fill=INK)
-        d.polygon([(px + 11, py), (px + 16, py - 7), (px + 21, py)],
-                  fill=INK)
-        d.polygon([(px + 30, py), (px + 34, py - 5), (px + 37, py + 1)],
-                  fill=INK)
+        d.polygon([(x + 108, y + h * 0.26), (x + 112, y + h * 0.14),
+                   (x + 116, y + h * 0.26)], fill=INK)
 
 
-# ---- world map: recognisable continents, equirectangular pins ----
+# ---- world map from real coastline data ----
 
-# Coarse (lon, lat) outlines, drawn in that order.
-CONTINENTS = [
-    [(-168, 66), (-165, 60), (-158, 58), (-150, 60), (-140, 60),
-     (-135, 58), (-130, 54), (-125, 49), (-124, 42), (-120, 34),
-     (-117, 32), (-110, 24), (-105, 20), (-97, 16), (-94, 17), (-90, 14),
-     (-86, 12), (-83, 9), (-79, 9), (-81, 13), (-84, 16), (-87, 21),
-     (-90, 21), (-91, 19), (-96, 19), (-97, 26), (-93, 30), (-89, 30),
-     (-84, 30), (-81, 25), (-80, 32), (-76, 35), (-75, 39), (-70, 42),
-     (-68, 45), (-65, 44), (-60, 47), (-55, 52), (-60, 55), (-65, 60),
-     (-68, 58), (-78, 62), (-85, 66), (-92, 66), (-95, 69), (-110, 68),
-     (-125, 70), (-140, 70), (-155, 71), (-165, 68)],
-    [(-58, 64), (-52, 60), (-43, 60), (-40, 64), (-32, 68), (-22, 70),
-     (-20, 74), (-25, 76), (-35, 77), (-50, 76), (-58, 74), (-60, 70)],
-    [(-79, 9), (-77, 4), (-80, -3), (-81, -6), (-77, -12), (-72, -18),
-     (-70, -23), (-70, -30), (-72, -37), (-73, -44), (-74, -50),
-     (-70, -54), (-66, -55), (-68, -50), (-65, -45), (-62, -40),
-     (-58, -35), (-52, -32), (-48, -28), (-41, -23), (-39, -17),
-     (-35, -9), (-35, -6), (-40, -3), (-44, -2), (-50, 0), (-53, 4),
-     (-58, 6), (-62, 9), (-68, 11), (-72, 12), (-76, 10)],
-    [(-17, 15), (-16, 20), (-15, 25), (-10, 29), (-5, 35), (0, 36),
-     (10, 37), (11, 34), (20, 32), (25, 32), (30, 31), (32, 31), (35, 28),
-     (37, 22), (39, 18), (41, 11), (43, 11), (46, 11), (51, 12), (51, 10),
-     (48, 5), (42, 0), (40, -5), (40, -10), (36, -18), (33, -26),
-     (28, -33), (20, -35), (17, -32), (15, -27), (12, -18), (13, -12),
-     (9, -1), (9, 4), (4, 6), (-8, 5), (-13, 8), (-17, 12)],
-    [(-10, 36), (-9, 43), (-2, 44), (-1, 46), (-4, 48), (-2, 50), (0, 51),
-     (3, 53), (5, 53), (8, 55), (8, 57), (10, 59), (5, 60), (5, 62),
-     (12, 64), (18, 66), (25, 68), (30, 70), (40, 68), (45, 68), (55, 69),
-     (65, 69), (75, 72), (85, 73), (95, 75), (105, 77), (115, 73),
-     (125, 72), (135, 71), (145, 72), (155, 70), (160, 66), (162, 60),
-     (158, 55), (155, 50), (150, 45), (142, 42), (140, 38), (135, 35),
-     (130, 33), (127, 35), (122, 38), (120, 32), (118, 25), (112, 22),
-     (108, 18), (105, 10), (103, 8), (100, 7), (98, 12), (95, 16),
-     (92, 21), (89, 22), (86, 20), (82, 17), (80, 13), (77, 8), (75, 12),
-     (72, 20), (70, 23), (66, 25), (62, 25), (58, 25), (55, 26), (52, 26),
-     (50, 29), (48, 30), (44, 29), (40, 32), (36, 36), (33, 36), (30, 36),
-     (27, 37), (23, 36), (19, 40), (16, 44), (12, 44), (8, 44), (3, 43),
-     (-1, 38), (-6, 36), (-9, 37)],
-    [(-5, 50), (-3, 53), (-5, 56), (-3, 58), (-1, 57), (0, 53)],
-    [(130, 31), (132, 33), (134, 34), (136, 35), (138, 36), (140, 38),
-     (141, 40), (142, 42), (140, 44), (139, 42), (137, 38), (134, 35),
-     (131, 33)],
-    [(120, 18), (122, 16), (121, 14), (122, 11), (124, 10), (122, 8),
-     (120, 12), (119, 16)],
-    [(95, 5), (98, 3), (100, 0), (104, -2), (108, -6), (112, -7),
-     (116, -8), (120, -9), (118, -10), (112, -8), (106, -6), (102, -1),
-     (98, 2)],
-    [(109, 1), (113, 4), (117, 6), (119, 1), (117, -3), (112, -3),
-     (109, -1)],
-    [(131, -1), (136, -2), (141, -3), (146, -6), (150, -9), (147, -8),
-     (141, -8), (136, -6), (131, -3)],
-    [(114, -22), (114, -30), (115, -35), (118, -35), (124, -33),
-     (129, -32), (132, -32), (135, -35), (138, -35), (140, -38),
-     (145, -38), (150, -37), (153, -32), (153, -27), (150, -22),
-     (146, -19), (142, -15), (142, -11), (137, -12), (135, -15),
-     (132, -12), (130, -13), (126, -14), (122, -17), (118, -20)],
-    [(44, -16), (47, -15), (50, -16), (49, -20), (46, -24), (44, -25),
-     (43, -21), (43, -17)],
-    [(167, -45), (170, -43), (174, -41), (176, -38), (175, -36),
-     (173, -35), (170, -40), (167, -44)],
-]
-
-# Pin number -> (lon, lat). A few are nudged a couple of degrees so
-# neighbouring pins stay visible: 1/5/8 in the east Mediterranean,
-# 2/12 in the Gulf, and 7/11 which share California.
-PIN_LATLON = {
+PIN_LONLAT = {
     1: (36.5, 47.0), 2: (60.0, 30.0), 3: (121.0, 14.6), 4: (25.0, -2.0),
     5: (24.0, 41.0), 6: (-98.0, 39.0), 7: (-128.0, 42.0),
     8: (32.0, 31.5), 9: (139.7, 35.7), 10: (2.3, 48.9),
@@ -456,31 +472,38 @@ PIN_LATLON = {
     14: (106.9, 47.9), 15: (86.1, 55.4),
 }
 
+PIN_CENTERS = []
 
-def draw_world_map(d, x, y, w, h):
-    d.rectangle([x, y, x + w, y + h], fill=SEA, outline=INK, width=1)
-    # Equirectangular: lon -180..180, lat -60..85.
-    for poly in CONTINENTS:
-        pts = [(x + (lon + 180) / 360.0 * w,
-                y + (85 - lat) / 145.0 * h) for lon, lat in poly]
-        d.polygon(pts, fill=LAND, outline=GREY)
-    f = fb(SANS_B, 10)
-    for num, (lon, lat) in sorted(PIN_LATLON.items()):
-        cx = x + (lon + 180) / 360.0 * w
-        cy = y + (85 - lat) / 145.0 * h
-        d.ellipse([cx - 8, cy - 8, cx + 8, cy + 8], fill=RED, outline=CARD,
+
+def draw_world_map(img, d, x, y, w, h):
+    """World map on its own layer (so coastline outside the box is
+    clipped), from Natural Earth 110m land data, equirectangular
+    projection lon -180..180, lat 85..-60. Pins sit on real lon/lat
+    and are coloured by their story's region."""
+    layer = Image.new("RGB", (w, h), SEA)
+    ld = ImageDraw.Draw(layer)
+
+    def proj(lon, lat):
+        return ((lon + 180) / 360 * w, (85 - lat) / 145 * h)
+
+    for poly in LAND_POLYS:
+        pts = [proj(lon, lat) for lon, lat in poly]
+        ld.polygon(pts, fill=LAND, outline=INK)
+    img.paste(layer, (x, y))
+    for num, (lon, lat) in PIN_LONLAT.items():
+        px, py = x + proj(lon, lat)[0], y + proj(lon, lat)[1]
+        PIN_CENTERS.append((num, px, py))
+        region = STORIES[num - 1]["region"]
+        col = REGION_COLORS[region]
+        d.ellipse([px - 8, py - 8, px + 8, py + 8], fill=col, outline=INK,
                   width=1)
-        text_center(d, cx, cy - 5, str(num), f, CARD)
+        f = fb(SANS_B, 10)
+        t = str(num)
+        tw = d.textlength(t, font=f)
+        d.text((px - tw / 2, py - 6), t, font=f, fill=(255, 255, 255))
 
 
-# ---- Tahap 1: the data - ONE list, 39 unique stories ----
-# Every story: id, region, title, summary, status (CONFIRMED / CLAIM /
-# "none"), event (a slug for the underlying event, used by the duplicate
-# check), plus cat / scene / tag for the 15 illustrated cards only.
-# The ALSO list shows each story's title; the summary is the data record
-# (and the card sub-label for cards 1-15). All 39 happened or were first
-# reported on Tuesday 17 November 2026, as reported by Reuters, AP,
-# PAHO, WHO and the UN (new items 34-39: Le Monde, CNN, UNB).
+# ---- Stage 1: one data list, 39 unique stories ----
 
 REGIONS = ["EUROPE", "MIDDLE EAST", "ASIA", "AFRICA", "AMERICAS",
            "OCEANIA", "WORLD"]
@@ -491,14 +514,16 @@ STORIES = [
      "summary": "Second strike in two days; Zelenskyy hails it "
      "'unprecedented'; Kremlin vows rebuild.",
      "status": "CONFIRMED", "event": "kerch-bridge",
-     "cat": "EUROPE - UKRAINE WAR", "scene": "kerch",
+     "cat": "EUROPE - UKRAINE WAR", "scene": "kerch", "source": "R",
+     "caption": "Kerch Strait, between Crimea and Russia",
      "tag": "CONFIRMED: Reuters-verified footage of the collapsed span."},
     {"id": 2, "region": "MIDDLE EAST",
      "title": "US strikes Iran as tankers burn in Hormuz",
      "summary": "Warplanes hit a missile site on Qeshm; 24 seafarers "
      "evacuated from the burning Tara Gas.",
      "status": "CLAIM", "event": "us-strikes-iran",
-     "cat": "MIDDLE EAST - IRAN WAR", "scene": "gulf",
+     "cat": "MIDDLE EAST - IRAN WAR", "scene": "gulf", "source": "AP",
+     "caption": "Strait of Hormuz, between Iran and Oman",
      "tag": "CLAIM: Iran says tankers hit mines in Hormuz - not "
      "independently verified."},
     {"id": 3, "region": "ASIA",
@@ -506,209 +531,205 @@ STORIES = [
      "summary": "First Quad meeting since his return to office; due to "
      "meet Xi and Putin in China on Thursday.",
      "status": "none", "event": "quad-summit-manila",
-     "cat": "ASIA - DIPLOMACY", "scene": "quad"},
+     "cat": "ASIA - DIPLOMACY", "scene": "quad", "source": "AP",
+     "caption": "Manila, Philippines - ASEAN and Quad summits"},
     {"id": 4, "region": "AFRICA",
      "title": "Ebola cases in DR Congo top 11,000",
      "summary": "WHO says 5,400 have died; it reviews the emergency "
      "status.",
      "status": "none", "event": "ebola-dr-congo",
-     "cat": "AFRICA - HEALTH", "scene": "ebola"},
+     "cat": "AFRICA - HEALTH", "scene": "ebola", "source": "WHO"},
     {"id": 5, "region": "WORLD",
      "title": "COP31 talks grind on in Antalya",
      "summary": "Nations weigh a first draft; the talks end Friday.",
      "status": "none", "event": "cop31-talks",
-     "cat": "GLOBAL - CLIMATE", "scene": "cop31"},
+     "cat": "GLOBAL - CLIMATE", "scene": "cop31", "source": "AP"},
     {"id": 6, "region": "AMERICAS",
-     "title": "US loses measles-free status",
+     "title": "US measles-free status lost",
      "summary": "PAHO cites a year of uninterrupted spread.",
      "status": "none", "event": "us-measles-status",
-     "cat": "AMERICAS - HEALTH", "scene": "measles"},
+     "cat": "AMERICAS - HEALTH", "scene": "measles", "source": "PAHO"},
     {"id": 7, "region": "AMERICAS",
-     "title": "Nvidia's quarterly sales double to $115.8B",
+     "title": "Nvidia sales double to $115.8B",
      "summary": "Shares rise after the close; Q4 forecast near $130B.",
      "status": "none", "event": "nvidia-earnings",
-     "cat": "US - BUSINESS", "scene": "nvidia"},
+     "cat": "US - BUSINESS", "scene": "nvidia", "source": "AP"},
     {"id": 8, "region": "MIDDLE EAST",
-     "title": "Gaza aid call as winter rains flood shelters",
+     "title": "Winter rains flood Gaza shelters",
      "summary": "UK, Australia, Canada and Italy urge Israel to open "
      "crossings.",
      "status": "none", "event": "gaza-aid-call",
-     "cat": "MIDDLE EAST - GAZA", "scene": "gaza"},
+     "cat": "MIDDLE EAST - GAZA", "scene": "gaza", "source": "AP"},
     {"id": 9, "region": "ASIA",
      "title": "Japan scrambles jets",
      "summary": "Russian aircraft violated airspace.",
      "status": "none", "event": "japan-jets",
-     "cat": "ASIA - POLITICS", "scene": "japan"},
+     "cat": "ASIA - POLITICS", "scene": "japan", "source": "AP"},
     {"id": 10, "region": "EUROPE",
      "title": "Depardieu admits sexual assault",
      "summary": "French actor drops his appeal in Paris.",
      "status": "none", "event": "depardieu-appeal",
-     "cat": "EUROPE - COURTS", "scene": "depardieu"},
+     "cat": "EUROPE - COURTS", "scene": "depardieu", "source": "AP"},
     {"id": 11, "region": "AMERICAS",
      "title": "Apple outage fixed",
      "summary": "iCloud sign-ins and the App Store back up.",
      "status": "none", "event": "apple-outage",
-     "cat": "TECH", "scene": "apple"},
+     "cat": "TECH", "scene": "apple", "source": "AP"},
     {"id": 12, "region": "MIDDLE EAST",
-     "title": "Houthis fire drones at Saudi pipeline",
+     "title": "Houthi drones hit Saudi pipeline",
      "summary": "Five drones aimed at Riyadh pumping stations.",
      "status": "CLAIM", "event": "houthi-drones-saudi",
-     "cat": "MIDDLE EAST - ENERGY", "scene": "houthis",
+     "cat": "MIDEAST - ENERGY", "scene": "houthi", "source": "R",
      "tag": "HOUTHI CLAIM - no Saudi confirmation."},
     {"id": 13, "region": "ASIA",
      "title": "China rejects US chip curbs",
      "summary": "Beijing hits back at the cloud-access rule.",
      "status": "none", "event": "china-chip-curbs",
-     "cat": "ASIA - TRADE", "scene": "china"},
+     "cat": "ASIA - TRADE", "scene": "china", "source": "R"},
     {"id": 14, "region": "ASIA",
-     "title": "Mongolia's president says he will resign",
-     "summary": "Denies a $25m bribe claim over a railway deal; "
-     "parliament must accept.",
+     "title": "Mongolia president will resign",
+     "summary": "Denies $25m bribe claim; MPs must accept.",
      "status": "none", "event": "mongolia-resignation",
-     "cat": "ASIA - POLITICS", "scene": "mongolia"},
+     "cat": "ASIA - POLITICS", "scene": "mongolia", "source": "AP"},
     {"id": 15, "region": "EUROPE",
-     "title": "Russian An-12 crash in Siberia kills 19",
-     "summary": "Military plane down near Kemerovo; ministry blames a "
-     "technical fault.",
+     "title": "An-12 crash in Siberia kills 19",
+     "summary": "Plane down near Kemerovo; ministry blames a fault.",
      "status": "none", "event": "an12-crash",
-     "cat": "RUSSIA - AIR CRASH", "scene": "an12"},
+     "cat": "RUSSIA - AIR CRASH", "scene": "an12", "source": "AP"},
     {"id": 16, "region": "MIDDLE EAST",
      "title": "(as reported) Lebanon: Israeli airstrikes, shelling, "
      "detonations.",
-     "summary": "Israeli airstrikes, shelling and detonations reported "
-     "in Lebanon; not independently verified.",
-     "status": "none", "event": "lebanon-strikes"},
+     "summary": "Israeli airstrikes, shelling and detonations were "
+     "reported in Lebanon.",
+     "status": "none", "event": "lebanon-strikes", "source": "R"},
     {"id": 17, "region": "MIDDLE EAST",
      "title": "UKMTO reports a second tanker strike north of Khasab, "
      "Oman.",
-     "summary": "A second tanker was struck 7 nautical miles north of "
-     "Khasab, Oman, UKMTO said.",
-     "status": "none", "event": "second-tanker-khasab"},
+     "summary": "UKMTO reported a second tanker strike north of Khasab, "
+     "Oman.",
+     "status": "none", "event": "second-tanker-khasab", "source": "UKMTO"},
     {"id": 18, "region": "EUROPE",
      "title": "Zelenskyy: bridge strike answers Russian attacks on "
      "infrastructure.",
-     "summary": "Zelenskyy said the bridge operation answers Russian "
-     "attacks on Ukrainian infrastructure.",
-     "status": "none", "event": "zelenskyy-bridge-statement"},
+     "summary": "Zelenskyy said the bridge strike answers Russian "
+     "attacks on infrastructure.",
+     "status": "none", "event": "zelenskyy-bridge-statement", "source": "R"},
     {"id": 19, "region": "AMERICAS",
      "title": "Wall Street: S&P 500 -1%, Dow -1.6%, Nasdaq -0.7%.",
-     "summary": "US stocks fell; the S&P 500 lost 1%, the Dow 1.6% and "
-     "the Nasdaq 0.7%.",
-     "status": "none", "event": "wall-street-falls"},
+     "summary": "Wall Street fell: the S&P 500 lost 1%, the Dow 1.6% "
+     "and the Nasdaq 0.7%.",
+     "status": "none", "event": "wall-street-falls", "source": "AP"},
     {"id": 20, "region": "AMERICAS",
      "title": "Nvidia board will not reinstate Jensen Huang as CEO.",
-     "summary": "Nvidia's board said it will not reinstate Jensen Huang "
-     "as chief executive.",
-     "status": "none", "event": "nvidia-board-ceo"},
+     "summary": "Nvidia's board will not reinstate Jensen Huang as CEO.",
+     "status": "none", "event": "nvidia-board-ceo", "source": "AP"},
     {"id": 21, "region": "MIDDLE EAST",
      "title": "Dubai airports: 50.4M passengers in 9 months, down 28.1%.",
      "summary": "Dubai airports handled 50.4 million passengers in nine "
      "months, down 28.1%.",
-     "status": "none", "event": "dubai-airports"},
+     "status": "none", "event": "dubai-airports", "source": "AP"},
     {"id": 22, "region": "MIDDLE EAST",
      "title": "Yemen: government forces pull back toward Aden as Houthis "
      "advance.",
-     "summary": "Yemeni government forces withdrew toward Aden as Houthi "
-     "fighters advanced.",
-     "status": "none", "event": "yemen-pullback"},
+     "summary": "Yemeni government forces pulled back toward Aden as "
+     "Houthi forces advanced.",
+     "status": "none", "event": "yemen-pullback", "source": "AP"},
     {"id": 23, "region": "EUROPE",
      "title": "Five EU states plan a migrant return hub in Rwanda.",
-     "summary": "Austria, Germany, the Netherlands, Denmark and Greece "
-     "plan a migrant return hub in Rwanda.",
-     "status": "none", "event": "eu-rwanda-hub"},
+     "summary": "Five EU states plan a migrant return hub in Rwanda.",
+     "status": "none", "event": "eu-rwanda-hub", "source": "AP"},
     {"id": 24, "region": "WORLD",
      "title": "Grammy nominations: RAYE leads with 11, ROSAL\u00cdA has 9.",
-     "summary": "RAYE leads the Grammy nominations with 11; "
-     "ROSAL\u00cdA has 9.",
-     "status": "none", "event": "grammy-nominations"},
+     "summary": "RAYE leads the Grammy nominations with 11; ROSAL\u00cdA "
+     "has 9.",
+     "status": "none", "event": "grammy-nominations", "source": "AP"},
     {"id": 25, "region": "MIDDLE EAST",
      "title": "UN: winter rains deepen Gaza shelter crisis.",
-     "summary": "The UN said winter rains are deepening the shelter "
-     "crisis in Gaza.",
-     "status": "none", "event": "gaza-winter-rains"},
+     "summary": "The UN said winter rains deepen the Gaza shelter "
+     "crisis.",
+     "status": "none", "event": "gaza-winter-rains", "source": "UN"},
     {"id": 26, "region": "AFRICA",
      "title": "Ebola: WHO emergency committee reviews the outbreak "
      "status.",
-     "summary": "The WHO emergency committee reviewed the Ebola outbreak "
+     "summary": "The WHO emergency committee reviews the Ebola outbreak "
      "status.",
-     "status": "none", "event": "ebola-who-committee"},
+     "status": "none", "event": "ebola-who-committee", "source": "WHO"},
     {"id": 27, "region": "WORLD",
      "title": "COP31: first draft of the cover decision out; talks end "
      "Friday.",
-     "summary": "COP31 released a first draft of the cover decision; "
+     "summary": "COP31's first draft of the cover decision is out; the "
      "talks end Friday.",
-     "status": "none", "event": "cop31-draft"},
+     "status": "none", "event": "cop31-draft", "source": "AP"},
     {"id": 28, "region": "OCEANIA",
      "title": "Cyclone Xavier batters the Northern Cook Islands.",
      "summary": "Cyclone Xavier battered the Northern Cook Islands.",
-     "status": "none", "event": "cyclone-xavier"},
+     "status": "none", "event": "cyclone-xavier", "source": "AP"},
     {"id": 29, "region": "WORLD",
      "title": "Voyager 1 nears one light-day from Earth; crosses early "
      "Wednesday.",
      "summary": "Voyager 1 nears one light-day from Earth and crosses "
      "early Wednesday.",
-     "status": "none", "event": "voyager-1"},
+     "status": "none", "event": "voyager-1", "source": "NASA"},
     {"id": 30, "region": "AFRICA",
      "title": "UN verifies 2,230 civilian deaths in Sudan; drones caused "
      "most.",
      "summary": "The UN verified 2,230 civilian deaths in Sudan, most "
      "caused by drones.",
-     "status": "none", "event": "sudan-civilian-deaths"},
+     "status": "none", "event": "sudan-civilian-deaths", "source": "UN"},
     {"id": 31, "region": "MIDDLE EAST",
      "title": "Israel: Matan Kahana elected Knesset speaker, 66-52.",
      "summary": "Matan Kahana was elected Knesset speaker by 66 votes "
      "to 52.",
-     "status": "none", "event": "kahana-speaker"},
+     "status": "none", "event": "kahana-speaker", "source": "AP"},
     {"id": 32, "region": "EUROPE",
      "title": "Moldova shuts airspace as 7 drones cross in; 5 crash near "
      "villages.",
      "summary": "Moldova shut its airspace as seven drones crossed in; "
      "five crashed near villages.",
-     "status": "none", "event": "moldova-drones"},
+     "status": "none", "event": "moldova-drones", "source": "AP"},
     {"id": 33, "region": "AMERICAS",
      "title": "US: 13 babies born with congenital measles; most cases "
      "since 1991.",
      "summary": "Thirteen babies were born with congenital measles in "
      "the US; cases are the highest since 1991.",
-     "status": "none", "event": "congenital-measles"},
+     "status": "none", "event": "congenital-measles", "source": "AP"},
     {"id": 34, "region": "EUROPE",
      "title": "France: wage protests draw 146,000; unions demand higher "
      "pay.",
      "summary": "Protests for higher wages drew 146,000 people across "
      "France; 28,000 marched in Paris.",
-     "status": "none", "event": "france-wage-protests"},
+     "status": "none", "event": "france-wage-protests", "source": "LM"},
     {"id": 35, "region": "EUROPE",
      "title": "Russia: no European seat at next Ukraine talks, aide says.",
      "summary": "Moscow has not agreed to European participation in the "
      "next round of Ukraine talks, aide Yuri Ushakov said.",
-     "status": "none", "event": "russia-europe-talks"},
+     "status": "none", "event": "russia-europe-talks", "source": "R"},
     {"id": 36, "region": "AMERICAS",
      "title": "NSA: classified network down; Fort Meade under code "
      "orange.",
      "summary": "The NSA's classified NSANet network went down early "
      "Tuesday; the Fort Meade campus was restricted under code orange.",
-     "status": "none", "event": "nsa-nsanet-outage"},
+     "status": "none", "event": "nsa-nsanet-outage", "source": "CNN"},
     {"id": 37, "region": "AMERICAS",
      "title": "Ecuador: 16 fishermen sue US over drone attack on boat.",
      "summary": "Sixteen Ecuadorian fishermen sued the US government "
      "over a drone attack that sank their boat in the Pacific in March.",
-     "status": "none", "event": "ecuador-fishermen-lawsuit"},
+     "status": "none", "event": "ecuador-fishermen-lawsuit", "source": "AP"},
     {"id": 38, "region": "WORLD",
      "title": "Pattinson named the new James Bond.",
      "summary": "British actor Robert Pattinson was named as the new "
      "James Bond.",
-     "status": "none", "event": "pattinson-james-bond"},
+     "status": "none", "event": "pattinson-james-bond", "source": "AP"},
     {"id": 39, "region": "ASIA",
      "title": "Dhaka tops world's most polluted cities; AQI 292.",
      "summary": "Dhaka ranked first among the world's most polluted "
      "cities on Tuesday morning, with an AQI of 292.",
-     "status": "none", "event": "dhaka-air-pollution"},
+     "status": "none", "event": "dhaka-air-pollution", "source": "UNB"},
 ]
 
 
 def check_stories():
     """Automatic duplicate check: the program stops on any duplicate."""
-    import sys
     if len(STORIES) != 39:
         sys.exit(f"expected 39 stories, got {len(STORIES)}")
     ids = [s["id"] for s in STORIES]
@@ -727,6 +748,8 @@ def check_stories():
             sys.exit(f"story {s['id']}: unknown region {s['region']!r}")
         if s["status"] not in ("CONFIRMED", "CLAIM", "none"):
             sys.exit(f"story {s['id']}: unknown status {s['status']!r}")
+        if s["id"] <= 15 and "source" not in s:
+            sys.exit(f"story {s['id']}: card without source initials")
 
 
 def region_counts():
@@ -739,22 +762,21 @@ def region_counts():
 # Derived views for the renderer. Numbers come from id, never typed.
 CARDS = STORIES[:15]
 ALSO = STORIES[15:]
-BIG = [(s["cat"], s["title"], s["summary"], s["scene"]) for s in CARDS[:3]]
-MEDIUM = [(s["cat"], s["title"], s["summary"], s["scene"])
-          for s in CARDS[3:9]]
-SMALL = [(s["cat"], s["title"], s["summary"], s["scene"])
-         for s in CARDS[9:15]]
+ALSO_BY_REGION = [(r, [s for s in ALSO if s["region"] == r])
+                  for r in REGIONS if any(s["region"] == r for s in ALSO)]
 TAG_BY_ID = {s["id"]: (s["tag"], TAG_GREEN if s["status"] == "CONFIRMED"
-                       else TAG_AMBER)
+                       else TAG_CLAIM)
              for s in STORIES if s.get("tag")}
 
+# (number, label, number colour, arrow) - Dow falls red, Nvidia rises
+# green; the rest stay ink.
 NUMBERS = [
-    ("11,000+", "Ebola cases, DR Congo"),
-    ("$115.8bn", "Nvidia quarter"),
-    ("-1.6%", "Dow on Tuesday"),
-    ("24", "seafarers evacuated from the Tara Gas"),
-    ("1,441", "drones Russia says it downed"),
-    ("50.4m", "Dubai airport passengers in 9 months, down 28.1%"),
+    ("11,000+", "Ebola cases, DR Congo", INK, ""),
+    ("$115.8bn", "Nvidia quarter", (0, 110, 60), "\u25b2"),
+    ("-1.6%", "Dow on Tuesday", RED, "\u25bc"),
+    ("24", "seafarers evacuated, Tara Gas", INK, ""),
+    ("1,441", "drones Russia says it downed", INK, ""),
+    ("50.4m", "Dubai passengers, down 28.1%", INK, ""),
 ]
 
 WHY_TEXT = ("A Tuesday of falling bridges, burning tankers and a 26-year "
@@ -763,72 +785,182 @@ WHY_TEXT = ("A Tuesday of falling bridges, burning tankers and a 26-year "
 THREAD_TEXT = ("Monday, Russia hit Kyiv's two Dnipro bridges - Tuesday, "
                "Ukraine answered by dropping the Kerch road span.")
 
-DATECHECK_TITLE = "DATE CHECK - left out as earlier news:"
-DATECHECK_ITEMS = ("COP31's first draft (16 Nov) - Grammy nominations "
-                   "announced (16 Nov) - US chip-export rule (16 Nov) - "
-                   "Guinea gold-mining sentences (16 Nov).")
+DATECHECK_TEXT = ("DATE CHECK - left out as earlier news: COP31's first "
+                  "draft (16 Nov) - Grammy nominations announced (16 Nov) "
+                  "- US chip-export rule (16 Nov) - Guinea gold-mining "
+                  "sentences (16 Nov).")
 
 
-# ---- card drawers (uniform title 12 px, body 10 px) ----
+# ---- card drawers (uniform title 12 px, body 10 px; big titles 17 px) ----
 
-def draw_big_panel(d, x, y, w, h, num, cat, headline, sub, kind, tag=None):
+CARD_BOUNDS = []
+
+
+def draw_source(d, ix, iy, iw, ih, source, group):
+    """Source initials at the card's bottom-right corner."""
+    f = fb(SANS, 8)
+    tw = d.textlength(source, font=f)
+    tbox(d, ix + iw - tw, iy + ih - 10, source, f, GREY, group,
+         label="source")
+
+
+def draw_big_panel(d, x, y, w, h, story):
+    num = story["id"]
+    group = f"card{num}"
     ix, iy, iw, ih = panel(d, x, y, w, h)
-    map_h = 30
-    if kind == "kerch":
+    CARD_BOUNDS.append((group, ix, iy, ix + iw, iy + ih))
+    region_col = REGION_COLORS[story["region"]]
+    tag = TAG_BY_ID.get(num)
+    # Measure the text first so the wide map fills the space the text
+    # leaves (no big empty area in the card).
+    font, lines, lh = fit_block(d, story["title"], SANS_B, BIG_TITLE_SIZE,
+                                BIG_TITLE_SIZE, iw, 2, 38,
+                                label=f"big title {num}", strict=True)
+    font2, lines2, lh2 = fit_block(d, story["summary"], SANS, BODY_SIZE,
+                                   BODY_SIZE, iw, 3, 33,
+                                   label=f"big sub {num}", strict=True)
+    map_h = ih - (8 + 3 + 15 + len(lines) * lh + 3 + len(lines2) * lh2
+                  + 3 + (20 if tag else 0)) - 2
+    HEIGHT_LOG.append((f"big card {num} map-min", map_h, 30))
+    if story["scene"] == "kerch":
         map_kerch(d, ix, iy, iw, map_h)
-    elif kind == "gulf":
+    elif story["scene"] == "gulf":
         map_gulf(d, ix, iy, iw, map_h)
     else:
         map_quad(d, ix, iy, iw, map_h)
-    ty = iy + map_h + 4
-    d.text((ix, ty), f"{num}. {cat}", font=fb(SANS_B, 13), fill=RED)
-    hy = ty + 18
-    font, lines, lh = fit_block(d, headline, SANS_B, TITLE_SIZE,
-                                TITLE_SIZE, iw, 2, 28)
+    # Location caption under the wide map.
+    tbox(d, ix, iy + map_h + 1, story["caption"], fb(SANS, 8), GREY,
+         group, label="caption")
+    cy = iy + map_h + 8 + 3
+    tbox(d, ix, cy, f"{num}. {story['cat']}", fb(SANS_B, 13), region_col,
+         group, label="cat")
+    hy = cy + 15
     for ln in lines:
-        d.text((ix, hy), ln, font=font, fill=INK)
+        tbox(d, ix, hy, ln, font, INK, group, label="title")
         hy += lh
-    font2, lines2, lh2 = fit_block(d, sub, SANS, BODY_SIZE, BODY_SIZE, iw,
-                                   3, 36)
     sy = hy + 3
     for ln in lines2:
-        d.text((ix, sy), ln, font=font2, fill=INK)
+        tbox(d, ix, sy, ln, font2, INK, group, label="sub")
         sy += lh2
     if tag is not None:
-        draw_tag(d, ix, sy + 3, iw, tag[0], tag[1], start=9, max_h=20)
+        draw_tag(d, ix, sy + 3, iw, tag[0], tag[1], group)
+    draw_source(d, ix, iy, iw, ih, story["source"], group)
+    content_h = (map_h + 8 + 3 + 15 + len(lines) * lh + 3
+                 + len(lines2) * lh2 + 3 + (20 if tag else 0))
+    HEIGHT_LOG.append((f"big card {num}", content_h, ih))
 
 
-def draw_small_panel(d, x, y, w, h, num, cat, headline, sub, kind,
-                     tag=None):
+def draw_small_panel(d, x, y, w, h, story):
+    num = story["id"]
+    group = f"card{num}"
     ix, iy, iw, ih = panel(d, x, y, w, h)
-    scene_h = 26
-    draw_scene(d, ix, iy, iw, scene_h, kind)
-    cy = iy + scene_h + 4
-    d.text((ix, cy), f"{num}. {cat}", font=fb(SANS_B, 9), fill=RED)
+    CARD_BOUNDS.append((group, ix, iy, ix + iw, iy + ih))
+    region_col = REGION_COLORS[story["region"]]
+    # Measure the text first so the scene fills the space the text
+    # leaves (about a third of the card, no big empty area).
+    _, t_lines, t_lh = fit_block(d, story["title"], SANS_B, TITLE_SIZE,
+                                 TITLE_SIZE, iw, 3, 42,
+                                 label=f"title {num}", strict=True)
+    _, s_lines, s_lh = fit_block(d, story["summary"], SANS, BODY_SIZE,
+                                 BODY_SIZE, iw, 3, 36,
+                                 label=f"sub {num}", strict=True)
+    tag = TAG_BY_ID.get(num)
+    text_h = (4 + 16 + len(t_lines) * t_lh + 3 + len(s_lines) * s_lh
+              + (3 + 20 if tag else 0))
+    # About a third of the card, capped so a short text does not make
+    # the picture dominate; the leftover space is split above and
+    # below the text block so the card stays balanced.
+    scene_h = min(ih - text_h - 2, 60)
+    HEIGHT_LOG.append((f"small card {num} scene", scene_h, 40))
+    extra = ih - scene_h - text_h
+    draw_scene(d, ix, iy, iw, scene_h, story["scene"])
+    cy = iy + scene_h + 4 + extra // 2
+    tbox(d, ix, cy, f"{num}. {story['cat']}", fb(SANS_B, 9), region_col,
+         group, label="cat")
     hy = cy + 16
-    font, lines, lh = fit_block(d, headline, SANS_B, TITLE_SIZE,
-                                TITLE_SIZE, iw, 3, 42)
+    font, lines, lh = fit_block(d, story["title"], SANS_B, TITLE_SIZE,
+                                TITLE_SIZE, iw, 3, 42,
+                                label=f"title {num}", strict=True)
     for ln in lines:
-        d.text((ix, hy), ln, font=font, fill=INK)
+        tbox(d, ix, hy, ln, font, INK, group, label="title")
         hy += lh
-    font2, lines2, lh2 = fit_block(d, sub, SANS, BODY_SIZE, BODY_SIZE, iw,
-                                   3, 36)
+    font2, lines2, lh2 = fit_block(d, story["summary"], SANS, BODY_SIZE,
+                                   BODY_SIZE, iw, 3, 36,
+                                   label=f"sub {num}", strict=True)
     sy = hy + 3
     for ln in lines2:
-        d.text((ix, sy), ln, font=font2, fill=INK)
+        tbox(d, ix, sy, ln, font2, INK, group, label="sub")
         sy += lh2
     if tag is not None:
-        draw_tag(d, ix, sy + 3, iw, tag[0], tag[1], start=9, max_h=20)
+        draw_tag(d, ix, sy + 3, iw, tag[0], tag[1], group)
+    draw_source(d, ix, iy, iw, ih, story["source"], group)
+    HEIGHT_LOG.append((f"small card {num}", text_h + scene_h, ih))
 
 
-LIST_SIZE = 11    # "Also on" font; never below BODY_SIZE (10 px)
+def check_layout():
+    """Automatic check: stop the program on any shrunk text, any card
+    content that overflows its frame, any list that does not fit, any
+    colliding map pins, or any recorded text box that overlaps another
+    or leaves the page."""
+    problems = []
+    for label, start, used, strict in FIT_LOG:
+        if strict and used < start:
+            problems.append(
+                f"{label}: font shrank {start}px -> {used}px")
+    for label, got, need in HEIGHT_LOG:
+        if "scene" in label or label.endswith("map-min"):
+            if got < need:
+                problems.append(
+                    f"{label}: only {got}px tall (min {need}px)")
+        elif got > need:
+            problems.append(
+                f"{label}: content {got}px overflows frame {need}px")
+    # Map pins must not collide.
+    for i, (n1, x1, y1) in enumerate(PIN_CENTERS):
+        for n2, x2, y2 in PIN_CENTERS[i + 1:]:
+            dist = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+            if dist < 16:
+                problems.append(
+                    f"map pins {n1} and {n2} collide ({dist:.1f}px apart)")
+    # Text boxes: no overlap within a group, none outside the page,
+    # none outside their card.
+    bounds = {g: (x0, y0, x1, y1) for g, x0, y0, x1, y1 in CARD_BOUNDS}
+    by_group = {}
+    for group, label, box in BOXES:
+        by_group.setdefault(group, []).append((label, box))
+        x0, y0, x1, y1 = box
+        if x0 < 12 or y0 < 12 or x1 > 1012 or y1 > 1012:
+            problems.append(
+                f"{group} {label}: box {box} leaves the page")
+        if group in bounds:
+            # 2 px of tolerance: a glyph's ink may sit a pixel past
+            # the text origin or a descender a pixel below the line.
+            bx0, by0, bx1, by1 = bounds[group]
+            if (x0 < bx0 - 2 or x1 > bx1 + 2 or y0 < by0 - 2
+                    or y1 > by1 + 2):
+                problems.append(
+                    f"{group} {label}: box {box} leaves its card")
+    for group, items in by_group.items():
+        for i, (l1, b1) in enumerate(items):
+            for l2, b2 in items[i + 1:]:
+                ox = min(b1[2], b2[2]) - max(b1[0], b2[0])
+                oy = min(b1[3], b2[3]) - max(b1[1], b2[1])
+                if ox > 1 and oy > 1:
+                    problems.append(
+                        f"{group}: {l1} {b1} overlaps {l2} {b2}")
+    if problems:
+        sys.exit("LAYOUT CHECK FAILED:\n" + "\n".join(problems))
+    print(f"layout check passed: {len(FIT_LOG)} text blocks, "
+          f"{len(BOXES)} recorded boxes, {len(PIN_CENTERS)} pins")
+
+
+LIST_SIZE = 10  # (defined here so main() reads it after the data block)
 
 
 def main():
     # Tahap 1 first: stop on any duplicate before drawing anything.
     check_stories()
     counts = region_counts()
-    region_bar = " - ".join(f"{r} {counts[r]}" for r in REGIONS)
     n_regions = sum(1 for r in REGIONS if counts[r] > 0)
     kicker_right = (f"{len(STORIES)} STORIES - {n_regions} REGIONS - "
                     "ALL FROM TUESDAY")
@@ -838,115 +970,151 @@ def main():
     d.rectangle([10, 10, W - 11, H - 11], outline=INK, width=4)
 
     # Top kicker (story count and region count come from the list).
-    d.text((16, 14), "THE WORLD'S NEWS IN ONE PICTURE",
-           font=fb(SANS_B, 15), fill=RED)
-    rw = d.textlength(kicker_right, font=fb(SANS_B, 15))
-    d.text((1008 - rw, 14), kicker_right, font=fb(SANS_B, 15), fill=INK)
-    d.line([(16, 34), (1008, 34)], fill=RED, width=2)
+    tbox(d, 16, 14, "THE WORLD'S NEWS IN ONE PICTURE", fb(SANS_B, 13),
+         RED, "header", label="kicker")
+    rw = d.textlength(kicker_right, font=fb(SANS_B, 13))
+    tbox(d, 1008 - rw, 14, kicker_right, fb(SANS_B, 13), INK, "header",
+         label="kicker-right")
+    d.line([(16, 31), (1008, 31)], fill=RED, width=2)
 
     # Banner, serif bold, as large as fits, with room below the descenders
     # so the tail of the "y" in "Tuesday" clears the rule underneath.
-    size = 38
+    size = 34
     while (d.textlength("Tuesday 17 November 2026", font=fb(SERIF_B, size))
-           > 980 and size > 34):
+           > 980 and size > 30):
         size -= 2
-    text_center(d, W // 2, 36, "Tuesday 17 November 2026",
-                fb(SERIF_B, size), INK)
-    d.line([(16, 82), (1008, 82)], fill=RED, width=3)
+    tbox_c(d, W // 2, 33, "Tuesday 17 November 2026", fb(SERIF_B, size),
+           INK, "header", label="banner")
+    d.line([(16, 69), (1008, 69)], fill=RED, width=3)
 
-    # Region-counts bar, computed from STORIES.
-    text_center(d, W // 2, 86, region_bar, fb(SANS_B, 12), INK)
+    # Region-counts bar, computed from STORIES, each segment in its
+    # region colour.
+    seg_font = fb(SANS_B, 10)
+    segs = [(f"{r} {counts[r]}", REGION_COLORS[r]) for r in REGIONS]
+    sep_w = d.textlength(" - ", font=seg_font)
+    total = sum(d.textlength(t, font=seg_font) for t, _ in segs)
+    total += sep_w * (len(segs) - 1)
+    sx = (W - total) / 2
+    for i, (text, col) in enumerate(segs):
+        tbox(d, sx, 73, text, seg_font, col, "header", label="region-bar")
+        sx += d.textlength(text, font=seg_font)
+        if i < len(segs) - 1:
+            tbox(d, sx, 73, " - ", seg_font, GREY, "header", label="sep")
+            sx += sep_w
 
-    # 1. BY THE NUMBERS strip.
+    # 1. BY THE NUMBERS strip (Dow red with a down arrow, Nvidia green
+    # with an up arrow).
     cell_w = (1008 - 16) / 6
-    for i, (num, label) in enumerate(NUMBERS):
+    for i, (num, label, col, arrow) in enumerate(NUMBERS):
         cx = 16 + i * cell_w
-        text_center(d, cx + cell_w / 2, 100, num, fb(SANS_B, 17), INK)
-        font, lines, lh = fit_block(d, label, SANS, 9, 9,
-                                    cell_w - 12, 2, 20)
-        ly2 = 120
+        nfont = fb(SANS_B, 13)
+        tw = d.textlength(num, font=nfont)
+        if arrow:
+            total_w = tw + 6 + 10
+            ax = cx + cell_w / 2 - total_w / 2
+            if arrow == "\u25b2":
+                d.polygon([(ax, 85 + 9), (ax + 10, 85 + 9),
+                           (ax + 5, 85 + 1)], fill=col)
+            else:
+                d.polygon([(ax, 85 + 1), (ax + 10, 85 + 1),
+                           (ax + 5, 85 + 9)], fill=col)
+            tbox(d, ax + 16, 85, num, nfont, col, "numbers", label="num")
+        else:
+            tbox_c(d, cx + cell_w / 2, 85, num, nfont, col, "numbers",
+                   label="num")
+        font, lines, lh = fit_block(d, label, SANS, 7, 7, cell_w - 12,
+                                    2, 16, label=f"number label {i}")
+        if len(lines) > 2:
+            sys.exit(f"number label {i} needs {len(lines)} lines")
+        ly2 = 102
         for ln in lines:
-            text_center(d, cx + cell_w / 2, ly2, ln, font, GREY)
+            tbox_c(d, cx + cell_w / 2, ly2, ln, font, GREY, "numbers",
+                   label="num-label")
             ly2 += lh
         if i:
-            d.line([(cx, 102), (cx, 138)], fill=GREY, width=1)
+            d.line([(cx, 87), (cx, 114)], fill=GREY, width=1)
 
     # 2. WHY THIS DAY MATTERS line (serif; no italic serif on this VM,
     # so regular serif, centred).
-    text_center(d, W // 2, 144, WHY_TEXT, fb(SERIF, 14), INK)
+    tbox_c(d, W // 2, 120, WHY_TEXT, fb(SERIF, 10), INK, "header",
+           label="why")
 
-    # Row 1: three big panels. Numbers and tags come from the stories.
-    for i, (cat, head, sub, kind) in enumerate(BIG):
-        num = CARDS[i]["id"]
-        draw_big_panel(d, 16 + i * 335, 162, 322, 152, num, cat, head,
-                       sub, kind, tag=TAG_BY_ID.get(num))
+    # Row 1: three big panels.
+    for i in range(3):
+        draw_big_panel(d, 16 + i * 335, 134, 322, 170, CARDS[i])
 
     # 3. THE DAY'S THREAD line.
     label = "THE DAY'S THREAD: "
-    lw = d.textlength(label, font=fb(SANS_B, 12))
-    d.text((16, 318), label, font=fb(SANS_B, 12), fill=RED)
-    d.text((16 + lw, 318), THREAD_TEXT, font=fb(SANS, 12), fill=INK)
+    lw = d.textlength(label, font=fb(SANS_B, 10))
+    tbox(d, 16, 308, label, fb(SANS_B, 10), RED, "header", label="thread")
+    tbox(d, 16 + lw, 308, THREAD_TEXT, fb(SANS, 10), INK, "header",
+         label="thread-text")
 
     # Row 2: six medium panels.
-    for i, (cat, head, sub, kind) in enumerate(MEDIUM):
-        num = CARDS[3 + i]["id"]
-        draw_small_panel(d, 16 + i * 165, 334, 158, 151, num, cat, head,
-                         sub, kind)
+    for i in range(6):
+        draw_small_panel(d, 16 + i * 165, 322, 158, 152, CARDS[3 + i])
 
     # Row 3: six small panels.
-    for i, (cat, head, sub, kind) in enumerate(SMALL):
-        num = CARDS[9 + i]["id"]
-        draw_small_panel(d, 16 + i * 165, 489, 158, 160, num, cat, head,
-                         sub, kind, tag=TAG_BY_ID.get(num))
+    for i in range(6):
+        draw_small_panel(d, 16 + i * 165, 478, 158, 164, CARDS[9 + i])
 
-    # Bottom left: world map with numbered pins.
-    mx, my, mw, mh = 16, 653, 486, 300
+    # Bottom left: world map with numbered pins + region legend.
+    mx, my, mw, mh = 16, 646, 486, 330
     d.rectangle([mx, my, mx + mw, my + mh], fill=CARD, outline=INK, width=2)
     d.rectangle([mx, my, mx + mw, my + 5], fill=RED)
     section_title(d, mx + 12, my + 12, "WHERE IT HAPPENED")
-    draw_world_map(d, mx + 12, my + 32, mw - 24, mh - 44)
+    draw_world_map(img, d, mx + 12, my + 32, mw - 24, 280)
+    leg_font = fb(SANS_B, 8)
+    leg_w = 0
+    for r in REGIONS:
+        leg_w += 6 + 4 + d.textlength(r, font=leg_font)
+    leg_w += 8 * (len(REGIONS) - 1)
+    lx_leg = mx + mw / 2 - leg_w / 2
+    for i, r in enumerate(REGIONS):
+        d.ellipse([lx_leg, my + 315, lx_leg + 6, my + 321],
+                  fill=REGION_COLORS[r])
+        tbox(d, lx_leg + 10, my + 314, r, leg_font, REGION_COLORS[r],
+             "map", label="legend")
+        lx_leg += 6 + 4 + d.textlength(r, font=leg_font) + 8
 
-    # Bottom right: "Also on" list, ids 16-39, font >= body size.
-    lx, ly, lw, lh = 514, 653, 494, 300
+    # Bottom right: "Also on" list, grouped by region, ids 16-39.
+    lx, ly, lw, lh = 514, 646, 494, 330
     d.rectangle([lx, ly, lx + lw, ly + lh], fill=CARD, outline=INK, width=2)
     d.rectangle([lx, ly, lx + lw, ly + 5], fill=RED)
     section_title(d, lx + 12, ly + 12, "ALSO ON TUESDAY 17 NOVEMBER")
     list_top, list_h = ly + 30, lh - 34
-    size = LIST_SIZE
-    while size >= BODY_SIZE:
-        font = fb(SANS, size)
-        lh_px = int(size * 1.05)
-        if (len(ALSO) * lh_px <= list_h and all(
-                d.textlength(f"{s['id']}. {s['title']}", font=font)
-                <= lw - 24 for s in ALSO)):
-            break
-        size -= 1
-    font = fb(SANS, size)
-    lh_px = int(size * 1.05)
     yy = list_top
-    for s in ALSO:
-        d.text((lx + 12, yy), f"{s['id']}. {s['title']}", font=font,
-               fill=INK)
-        yy += lh_px
+    for region, items in ALSO_BY_REGION:
+        col = REGION_COLORS[region]
+        tbox(d, lx + 12, yy, region, fb(SANS_B, LIST_HEAD_SIZE), col,
+             "list", label="head")
+        yy += 8
+        for s in items:
+            d.ellipse([lx + 12, yy + 1, lx + 18, yy + 7], fill=col)
+            tbox(d, lx + 24, yy, f"{s['id']}. {s['title']}",
+                 fb(SANS, LIST_SIZE), INK, "list", label="row")
+            yy += 10
+    HEIGHT_LOG.append(("list", yy - list_top, list_h))
 
-    # 5. DATE CHECK box.
-    d.rectangle([16, 955, 1008, 985], outline=INK, width=2)
-    d.rectangle([16, 955, 22, 985], fill=RED)
-    d.text((30, 959), DATECHECK_TITLE, font=fb(SANS_B, 11), fill=INK)
-    d.text((30, 971), DATECHECK_ITEMS, font=fb(SANS, 10), fill=INK)
+    # 5. DATE CHECK, one line.
+    d.rectangle([16, 980, 1008, 994], outline=INK, width=2)
+    d.rectangle([16, 980, 22, 994], fill=RED)
+    tbox(d, 30, 983, DATECHECK_TEXT, fb(SANS, 8), INK, "footer",
+         label="datecheck")
 
     # Footer (with the tag legend on the second line).
-    text_center(d, W // 2, 989,
-                "Every story here happened or was first reported on Tuesday "
-                "17 November 2026. Contested claims are marked as claims.",
-                fb(SANS, 9), GREY)
-    text_center(d, W // 2, 999,
-                "Sources: Reuters, AP, PAHO, WHO, UN, Le Monde, CNN, UNB. "
-                "Original drawings. Tags: CONFIRMED = verified by Reuters "
-                "/ AP / PAHO / WHO / UN; CLAIM = as stated by the source, "
-                "not independently verified.",
-                fb(SANS, 9), GREY)
+    tbox_c(d, W // 2, 997,
+           "Every story here happened or was first reported on Tuesday "
+           "17 November 2026. Contested claims are marked as claims.",
+           fb(SANS, 7), GREY, "footer", label="footer1")
+    tbox_c(d, W // 2, 1004,
+           "Sources: Reuters, AP, PAHO, WHO, UN, Le Monde, CNN, UNB, "
+           "UKMTO, NASA. Original drawings. Tags: CONFIRMED = verified "
+           "by Reuters / AP / PAHO / WHO / UN; CLAIM = as stated by the "
+           "source, not independently verified.",
+           fb(SANS, 7), GREY, "footer", label="footer2")
 
+    check_layout()
     img.save(OUT, optimize=True)
     print("saved", OUT)
 
