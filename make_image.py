@@ -1,35 +1,47 @@
-"""Draw the upgraded front page for news-image-20261117 (1024x1024 PNG).
+"""Draw the front page for news-image-20261117 (1024x1024 PNG).
 
-Upgrade, built on the 39-story rebuild (0fbc7a7). The news content, the
-style and the CONFIRMED/CLAIM tags are unchanged; what changed:
+Built on the 39-story rebuild (0fbc7a7) and the 8-point upgrade
+(e37e493). This version applies 8 fixes, without changing the style
+or the CONFIRMED/CLAIM tags:
 
-- Region colours (Europe blue, Middle East red, Asia orange, Africa
-  green, Americas purple, Oceania teal, World grey) on the header
-  counts, the card category lines, the map pins and a dot on every
-  "Also on" row, with a small legend under the map.
-- Bigger illustrations: cards 4-15 fill the space their text leaves
-  (scene about a third of the card, no big empty area); cards 1-3 use
-  a wide map with a location caption underneath.
-- The world map is drawn from real coastline data (Natural Earth 110m
-  land, coast.py) and pins are placed from real lon/lat coordinates.
-- The "Also on" list is grouped by region, in region order.
-- Cards 1-3 have titles about 1.4x the other cards' (17 px vs 12 px);
-  CLAIM tags use a darker amber.
-- Every card carries its source initials (Reuters R, AP, WHO, PAHO,
-  UN, Le Monde LM, CNN, UNB, UKMTO, NASA).
-- The numbers strip marks the Dow red with a down arrow and Nvidia
-  green with an up arrow.
-- A layout check runs before saving: it stops the program if any card
-  title or body shrank below its set size, if any card's content
-  overflows its frame, if the list does not fit, if two map pins
-  collide, or if any recorded text box overlaps another or leaves
-  the page.
+1. List entries 18, 24, 25, 26, 27 are replaced with 5 unique
+   17 November stories that do not repeat a card 1-15 event (JPMorgan
+   service restored, UK West Bank sanctions, Xi-Carney tariff cuts,
+   Mondlane trial, ULA Vulcan update). Grammy and the COP31 first
+   draft are out. The Pentagon audit is NOT used: its report came
+   out 16 Nov (Reuters 2026-11-16T22:50:44Z), so the Mondlane trial
+   (opened 17 Nov) takes its place. Region counts are recomputed
+   from the data; card 15 (An-12, Siberia) moves to ASIA.
+2. Every illustration is drawn on its own layer and pasted, so it is
+   clipped to its card box; the gap before THE DAY'S THREAD is wider.
+3. The footer is raised and set at 8 px so both source lines read
+   in full.
+4. The illustration area has a fixed height in every card (big maps
+   32 px, small scenes 38 px), so the category line, title and body
+   start at the same y within a row.
+5. The "Also on" list has a gap between region groups.
+6. In card 2's Gulf map, the QESHM and HORMUZ labels are moved away
+   from the lines and icons.
+7. The 2048x2048 render is native, not an upscale: the layout code
+   works in 1024 units and a ScaledDraw wrapper draws it at
+   MAKEFUN_SCALE x resolution (see render_2048.py).
+8. Card 10 uses a scales-of-justice scene (not a courthouse like
+   card 14) and card 7 uses a rising-chart scene (not a chip like
+   card 13).
+
+A layout check runs before saving: it stops the program if any card
+title or body shrank below its set size, if any card's content
+overflows its frame, if the list does not fit, if two map pins
+collide, or if any recorded text box overlaps another or leaves
+the page.
 
 The entry stays 1024x1024 (the bounty gate caps the file at 1024 px
-and 1 MiB). A 2048x2048 preview is rendered separately by upscaling
-(see render_2048.py); it is not the submitted file.
+and 1 MiB). The 2048x2048 render is a separate preview file
+(entry-2048.png), drawn natively at 2x by render_2048.py; it is not
+the submitted file.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -38,8 +50,80 @@ from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from coast import LAND_POLYS
 
+# Render scale. 1 = the 1024x1024 entry; 2 = the native 2048x2048
+# preview. The layout code below works in 1024 units; ScaledDraw
+# scales the drawing to device pixels, and fb() scales the fonts, so
+# the same code draws both resolutions natively (no upscaling).
+SCALE = int(os.environ.get("MAKEFUN_SCALE", "1"))
+
+
+def sc(v):
+    """A 1024-unit layout value in device pixels."""
+    return int(round(v * SCALE))
+
+
+class ScaledDraw:
+    """Wraps a PIL ImageDraw so layout code in 1024 units draws at
+    SCALE x resolution. Coordinates and line widths are scaled up at
+    draw time; measurements are scaled back down, so the layout code
+    keeps seeing 1024-unit values."""
+
+    def __init__(self, draw):
+        self._d = draw
+
+    def _s(self, v):
+        return v * SCALE
+
+    def _pts(self, xy):
+        if isinstance(xy, (list, tuple)) and xy and isinstance(
+                xy[0], (list, tuple)):
+            return [(self._s(x), self._s(y)) for x, y in xy]
+        return [self._s(v) for v in xy]
+
+    def text(self, xy, text, font=None, fill=None, **kw):
+        x, y = xy
+        return self._d.text((self._s(x), self._s(y)), text, font=font,
+                            fill=fill, **kw)
+
+    def textlength(self, text, font=None, **kw):
+        return self._d.textlength(text, font=font, **kw) / SCALE
+
+    def textbbox(self, xy, text, font=None, **kw):
+        x, y = xy
+        box = self._d.textbbox((self._s(x), self._s(y)), text, font=font,
+                               **kw)
+        return tuple(v / SCALE for v in box)
+
+    def line(self, xy, fill=None, width=1, **kw):
+        return self._d.line(self._pts(xy), fill=fill,
+                            width=self._s(width), **kw)
+
+    def rectangle(self, xy, fill=None, outline=None, width=1, **kw):
+        return self._d.rectangle(self._pts(xy), fill=fill, outline=outline,
+                                 width=self._s(width), **kw)
+
+    def polygon(self, xy, fill=None, outline=None, **kw):
+        return self._d.polygon(self._pts(xy), fill=fill, outline=outline,
+                               **kw)
+
+    def ellipse(self, xy, fill=None, outline=None, width=1, **kw):
+        return self._d.ellipse(self._pts(xy), fill=fill, outline=outline,
+                               width=self._s(width), **kw)
+
+
+def clipped_layer(img, x, y, w, h, draw_fn, bg):
+    """Draw draw_fn on a separate layer the size of the box, then paste
+    it, so the drawing is clipped to the box. draw_fn receives a
+    ScaledDraw and the box origin (0, 0) in layout units."""
+    layer = Image.new("RGB", (sc(w), sc(h)), bg)
+    ld = ScaledDraw(ImageDraw.Draw(layer))
+    draw_fn(ld, 0, 0, w, h)
+    img.paste(layer, (sc(x), sc(y)))
+
+
 W, H = 1024, 1024
-OUT = Path(__file__).resolve().parent / "entry.png"
+OUT = (Path(__file__).resolve().parent
+       / ("entry-2048.png" if SCALE == 2 else "entry.png"))
 
 PAPER = (247, 243, 232)
 CARD = (255, 253, 246)
@@ -76,6 +160,8 @@ _fonts = {}
 
 
 def fb(path, size):
+    """Font at a 1024-unit size, drawn at SCALE x resolution."""
+    size = sc(size)
     if (path, size) not in _fonts:
         _fonts[(path, size)] = ImageFont.truetype(path, size)
     return _fonts[(path, size)]
@@ -209,11 +295,10 @@ def map_gulf(d, x, y, w, h):
               fill=(255, 150, 40))
     d.ellipse([x + w * (tx0 + 0.04), y + h * ty0 - 7,
                x + w * (tx0 + 0.07), y + h * ty0 - 2], fill=RED)
-    # QESHM right of its island, HORMUZ bottom centre: the two labels
-    # must not stack on each other at this small map height, and HORMUZ
-    # must stay inside the map box when it is short.
-    d.text((x + w * 0.68, y + h * 0.40), "QESHM", font=f, fill=INK)
-    d.text((x + w * 0.60, y + h * 0.66), "HORMUZ", font=f, fill=INK)
+    # QESHM top-centre between the two grey lanes, HORMUZ bottom-centre
+    # right: both clear of the X marks, the tanker and the lanes.
+    d.text((x + w * 0.48, y + h * 0.08), "QESHM", font=f, fill=INK)
+    d.text((x + w * 0.64, y + h - 9), "HORMUZ", font=f, fill=INK)
 
 
 def map_quad(d, x, y, w, h):
@@ -286,8 +371,8 @@ def draw_scene(d, x, y, w, h, kind):
                     fill=(150, 140, 120))
         d.rectangle([x + 90, y + h * 0.15, x + 104, base], fill=RED)
         f7, f7b = fb(SANS, 7), fb(SANS_B, 7)
-        text_center(d, x + 37, y + h * 0.82, "3 MONTHS AGO", f7, GREY)
-        text_center(d, x + 97, y + h * 0.82, "NOW 11,000+", f7b, RED)
+        text_center(d, x + 37, y + h * 0.76, "3 MONTHS AGO", f7, GREY)
+        text_center(d, x + 97, y + h * 0.76, "NOW 11,000+", f7b, RED)
     elif kind == "cop31":
         cx, cy, r = x + 16, y + h * 0.38, int(h * 0.30)
         d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=SEA, outline=INK)
@@ -342,6 +427,22 @@ def draw_scene(d, x, y, w, h, kind):
                 (x + 124, y + h * 0.18)], fill=(0, 150, 60), width=3)
         d.polygon([(x + 124, y + h * 0.18), (x + 116, y + h * 0.18),
                    (x + 124, y + h * 0.26)], fill=(0, 150, 60))
+    elif kind == "chart":
+        # Rising stock chart, no chip: green bars plus a rising line
+        # with an arrowhead, for Nvidia's earnings (distinct from
+        # card 13's chip).
+        base = y + h * 0.82
+        d.line([(x + 8, base), (x + w - 4, base)], fill=GREY, width=1)
+        for bx, bh in ((14, 0.18), (38, 0.30), (62, 0.24), (86, 0.45),
+                       (110, 0.62)):
+            d.rectangle([x + bx, y + h * (0.82 - bh), x + bx + 14, base],
+                        fill=(0, 150, 60))
+        d.line([(x + 12, y + h * 0.68), (x + 36, y + h * 0.52),
+                (x + 60, y + h * 0.58), (x + 84, y + h * 0.34),
+                (x + 108, y + h * 0.38), (x + 126, y + h * 0.16)],
+               fill=(0, 110, 60), width=3)
+        d.polygon([(x + 126, y + h * 0.16), (x + 118, y + h * 0.16),
+                   (x + 126, y + h * 0.24)], fill=(0, 110, 60))
     elif kind == "gaza":
         d.rectangle([x + 8, y + h * 0.42, x + 58, y + h * 0.72],
                     fill=(200, 170, 120), outline=INK)
@@ -382,6 +483,21 @@ def draw_scene(d, x, y, w, h, kind):
         d.rectangle([x + 104, y + h * 0.22, x + 122, y + h * 0.38],
                     fill=(150, 110, 60), outline=INK)
         d.line([(x + 66, y + h * 0.72), (x + 128, y + h * 0.72)], fill=INK,
+               width=2)
+    elif kind == "scales":
+        # Scales of justice, no building: a post, a beam, two pans and
+        # a base, for the Depardieu verdict (distinct from card 14's
+        # parliament building).
+        cx = x + 67
+        d.line([(cx, y + h * 0.18), (cx, y + h * 0.82)], fill=INK, width=3)
+        d.line([(x + 26, y + h * 0.24), (x + 108, y + h * 0.24)], fill=INK,
+               width=3)
+        for px in (x + 26, x + 108):
+            d.line([(px, y + h * 0.24), (px, y + h * 0.48)], fill=INK,
+                   width=2)
+            d.polygon([(px - 12, y + h * 0.48), (px + 12, y + h * 0.48),
+                       (px, y + h * 0.62)], fill=LAND, outline=INK)
+        d.line([(x + 8, y + h * 0.82), (x + w - 4, y + h * 0.82)], fill=INK,
                width=2)
     elif kind == "apple":
         d.rectangle([x + 10, y + h * 0.15, x + 34, y + h * 0.85],
@@ -480,8 +596,8 @@ def draw_world_map(img, d, x, y, w, h):
     clipped), from Natural Earth 110m land data, equirectangular
     projection lon -180..180, lat 85..-60. Pins sit on real lon/lat
     and are coloured by their story's region."""
-    layer = Image.new("RGB", (w, h), SEA)
-    ld = ImageDraw.Draw(layer)
+    layer = Image.new("RGB", (sc(w), sc(h)), SEA)
+    ld = ScaledDraw(ImageDraw.Draw(layer))
 
     def proj(lon, lat):
         return ((lon + 180) / 360 * w, (85 - lat) / 145 * h)
@@ -489,7 +605,7 @@ def draw_world_map(img, d, x, y, w, h):
     for poly in LAND_POLYS:
         pts = [proj(lon, lat) for lon, lat in poly]
         ld.polygon(pts, fill=LAND, outline=INK)
-    img.paste(layer, (x, y))
+    img.paste(layer, (sc(x), sc(y)))
     for num, (lon, lat) in PIN_LONLAT.items():
         px, py = x + proj(lon, lat)[0], y + proj(lon, lat)[1]
         PIN_CENTERS.append((num, px, py))
@@ -553,7 +669,7 @@ STORIES = [
      "title": "Nvidia sales double to $115.8B",
      "summary": "Shares rise after the close; Q4 forecast near $130B.",
      "status": "none", "event": "nvidia-earnings",
-     "cat": "US - BUSINESS", "scene": "nvidia", "source": "AP"},
+     "cat": "US - BUSINESS", "scene": "chart", "source": "AP"},
     {"id": 8, "region": "MIDDLE EAST",
      "title": "Winter rains flood Gaza shelters",
      "summary": "UK, Australia, Canada and Italy urge Israel to open "
@@ -569,7 +685,7 @@ STORIES = [
      "title": "Depardieu admits sexual assault",
      "summary": "French actor drops his appeal in Paris.",
      "status": "none", "event": "depardieu-appeal",
-     "cat": "EUROPE - COURTS", "scene": "depardieu", "source": "AP"},
+     "cat": "EUROPE - COURTS", "scene": "scales", "source": "AP"},
     {"id": 11, "region": "AMERICAS",
      "title": "Apple outage fixed",
      "summary": "iCloud sign-ins and the App Store back up.",
@@ -591,7 +707,7 @@ STORIES = [
      "summary": "Denies $25m bribe claim; MPs must accept.",
      "status": "none", "event": "mongolia-resignation",
      "cat": "ASIA - POLITICS", "scene": "mongolia", "source": "AP"},
-    {"id": 15, "region": "EUROPE",
+    {"id": 15, "region": "ASIA",
      "title": "An-12 crash in Siberia kills 19",
      "summary": "Plane down near Kemerovo; ministry blames a fault.",
      "status": "none", "event": "an12-crash",
@@ -608,12 +724,12 @@ STORIES = [
      "summary": "UKMTO reported a second tanker strike north of Khasab, "
      "Oman.",
      "status": "none", "event": "second-tanker-khasab", "source": "UKMTO"},
-    {"id": 18, "region": "EUROPE",
-     "title": "Zelenskyy: bridge strike answers Russian attacks on "
-     "infrastructure.",
-     "summary": "Zelenskyy said the bridge strike answers Russian "
-     "attacks on infrastructure.",
-     "status": "none", "event": "zelenskyy-bridge-statement", "source": "R"},
+    {"id": 18, "region": "AMERICAS",
+     "title": "JPMorgan: service restored after Monday's outage; "
+     "shares fall.",
+     "summary": "Chase said transactions were back to normal after "
+     "Monday's software bug; shares fell.",
+     "status": "none", "event": "jpmorgan-outage", "source": "AP"},
     {"id": 19, "region": "AMERICAS",
      "title": "Wall Street: S&P 500 -1%, Dow -1.6%, Nasdaq -0.7%.",
      "summary": "Wall Street fell: the S&P 500 lost 1%, the Dow 1.6% "
@@ -638,28 +754,30 @@ STORIES = [
      "title": "Five EU states plan a migrant return hub in Rwanda.",
      "summary": "Five EU states plan a migrant return hub in Rwanda.",
      "status": "none", "event": "eu-rwanda-hub", "source": "AP"},
-    {"id": 24, "region": "WORLD",
-     "title": "Grammy nominations: RAYE leads with 11, ROSAL\u00cdA has 9.",
-     "summary": "RAYE leads the Grammy nominations with 11; ROSAL\u00cdA "
-     "has 9.",
-     "status": "none", "event": "grammy-nominations", "source": "AP"},
-    {"id": 25, "region": "MIDDLE EAST",
-     "title": "UN: winter rains deepen Gaza shelter crisis.",
-     "summary": "The UN said winter rains deepen the Gaza shelter "
-     "crisis.",
-     "status": "none", "event": "gaza-winter-rains", "source": "UN"},
+    {"id": 24, "region": "EUROPE",
+     "title": "UK sanctions 8 firms over West Bank settlements; "
+     "aid-blocker too.",
+     "summary": "Britain froze assets of eight firms building West "
+     "Bank settlements and of Tzav 9, which blocks Gaza aid.",
+     "status": "none", "event": "uk-westbank-sanctions", "source": "AP"},
+    {"id": 25, "region": "ASIA",
+     "title": "Xi, Carney agree tariff cuts; China eases curbs on "
+     "Canadian pork, seafood.",
+     "summary": "China will cut tariffs on C$400m of Canadian pork and "
+     "seafood; Canada extends steel and aluminium relief.",
+     "status": "none", "event": "xi-carney-tariffs", "source": "R"},
     {"id": 26, "region": "AFRICA",
-     "title": "Ebola: WHO emergency committee reviews the outbreak "
-     "status.",
-     "summary": "The WHO emergency committee reviews the Ebola outbreak "
-     "status.",
-     "status": "none", "event": "ebola-who-committee", "source": "WHO"},
-    {"id": 27, "region": "WORLD",
-     "title": "COP31: first draft of the cover decision out; talks end "
-     "Friday.",
-     "summary": "COP31's first draft of the cover decision is out; the "
-     "talks end Friday.",
-     "status": "none", "event": "cop31-draft", "source": "AP"},
+     "title": "Mondlane goes on trial in Mozambique; faces up to "
+     "24 years.",
+     "summary": "Opposition leader Venancio Mondlane faces five charges "
+     "over the deadly 2024 election protests.",
+     "status": "none", "event": "mondlane-trial", "source": "AP"},
+    {"id": 27, "region": "AMERICAS",
+     "title": "ULA: Vulcan's first stage underperformed; 40 Amazon "
+     "satellites lost.",
+     "summary": "ULA said the first stage underperformed just after "
+     "liftoff in Sunday's failure.",
+     "status": "none", "event": "vulcan-failure", "source": "AP"},
     {"id": 28, "region": "OCEANIA",
      "title": "Cyclone Xavier batters the Northern Cook Islands.",
      "summary": "Cyclone Xavier battered the Northern Cook Islands.",
@@ -804,30 +922,35 @@ def draw_source(d, ix, iy, iw, ih, source, group):
          label="source")
 
 
-def draw_big_panel(d, x, y, w, h, story):
+def draw_big_panel(img, d, x, y, w, h, story):
     num = story["id"]
     group = f"card{num}"
     ix, iy, iw, ih = panel(d, x, y, w, h)
     CARD_BOUNDS.append((group, ix, iy, ix + iw, iy + ih))
     region_col = REGION_COLORS[story["region"]]
     tag = TAG_BY_ID.get(num)
-    # Measure the text first so the wide map fills the space the text
-    # leaves (no big empty area in the card).
     font, lines, lh = fit_block(d, story["title"], SANS_B, BIG_TITLE_SIZE,
                                 BIG_TITLE_SIZE, iw, 2, 38,
                                 label=f"big title {num}", strict=True)
     font2, lines2, lh2 = fit_block(d, story["summary"], SANS, BODY_SIZE,
                                    BODY_SIZE, iw, 3, 33,
                                    label=f"big sub {num}", strict=True)
-    map_h = ih - (8 + 3 + 15 + len(lines) * lh + 3 + len(lines2) * lh2
-                  + 3 + (20 if tag else 0)) - 2
-    HEIGHT_LOG.append((f"big card {num} map-min", map_h, 30))
-    if story["scene"] == "kerch":
-        map_kerch(d, ix, iy, iw, map_h)
-    elif story["scene"] == "gulf":
-        map_gulf(d, ix, iy, iw, map_h)
-    else:
-        map_quad(d, ix, iy, iw, map_h)
+    # Fixed illustration height (point 4): the wide map is 28 px in
+    # every big card, so the caption, category, title and body start
+    # at the same y in all three. Drawn on a layer, so it is clipped
+    # to its box (point 2).
+    map_h = 28
+    HEIGHT_LOG.append((f"big card {num} map-min", map_h, 28))
+
+    def _map(ld, mx, my, mw, mh):
+        if story["scene"] == "kerch":
+            map_kerch(ld, mx, my, mw, mh)
+        elif story["scene"] == "gulf":
+            map_gulf(ld, mx, my, mw, mh)
+        else:
+            map_quad(ld, mx, my, mw, mh)
+
+    clipped_layer(img, ix, iy, iw, map_h, _map, CARD)
     # Location caption under the wide map.
     tbox(d, ix, iy + map_h + 1, story["caption"], fb(SANS, 8), GREY,
          group, label="caption")
@@ -850,14 +973,12 @@ def draw_big_panel(d, x, y, w, h, story):
     HEIGHT_LOG.append((f"big card {num}", content_h, ih))
 
 
-def draw_small_panel(d, x, y, w, h, story):
+def draw_small_panel(img, d, x, y, w, h, story):
     num = story["id"]
     group = f"card{num}"
     ix, iy, iw, ih = panel(d, x, y, w, h)
     CARD_BOUNDS.append((group, ix, iy, ix + iw, iy + ih))
     region_col = REGION_COLORS[story["region"]]
-    # Measure the text first so the scene fills the space the text
-    # leaves (about a third of the card, no big empty area).
     _, t_lines, t_lh = fit_block(d, story["title"], SANS_B, TITLE_SIZE,
                                  TITLE_SIZE, iw, 3, 42,
                                  label=f"title {num}", strict=True)
@@ -867,14 +988,16 @@ def draw_small_panel(d, x, y, w, h, story):
     tag = TAG_BY_ID.get(num)
     text_h = (4 + 16 + len(t_lines) * t_lh + 3 + len(s_lines) * s_lh
               + (3 + 20 if tag else 0))
-    # About a third of the card, capped so a short text does not make
-    # the picture dominate; the leftover space is split above and
-    # below the text block so the card stays balanced.
-    scene_h = min(ih - text_h - 2, 60)
-    HEIGHT_LOG.append((f"small card {num} scene", scene_h, 40))
-    extra = ih - scene_h - text_h
-    draw_scene(d, ix, iy, iw, scene_h, story["scene"])
-    cy = iy + scene_h + 4 + extra // 2
+    # Fixed illustration height (point 4): the scene is 34 px in every
+    # small card, so the category, title and body start at the same y
+    # within a row. Drawn on a layer, so it is clipped to its box
+    # (point 2).
+    scene_h = 34
+    HEIGHT_LOG.append((f"small card {num} scene", scene_h, 34))
+    clipped_layer(img, ix, iy, iw, scene_h,
+                  lambda ld, mx, my, mw, mh: draw_scene(
+                      ld, mx, my, mw, mh, story["scene"]), CARD)
+    cy = iy + scene_h + 4
     tbox(d, ix, cy, f"{num}. {story['cat']}", fb(SANS_B, 9), region_col,
          group, label="cat")
     hy = cy + 16
@@ -965,8 +1088,8 @@ def main():
     kicker_right = (f"{len(STORIES)} STORIES - {n_regions} REGIONS - "
                     "ALL FROM TUESDAY")
 
-    img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
+    img = Image.new("RGB", (sc(W), sc(H)), PAPER)
+    d = ScaledDraw(ImageDraw.Draw(img))
     d.rectangle([10, 10, W - 11, H - 11], outline=INK, width=4)
 
     # Top kicker (story count and region count come from the list).
@@ -979,13 +1102,13 @@ def main():
 
     # Banner, serif bold, as large as fits, with room below the descenders
     # so the tail of the "y" in "Tuesday" clears the rule underneath.
-    size = 34
+    size = 30
     while (d.textlength("Tuesday 17 November 2026", font=fb(SERIF_B, size))
-           > 980 and size > 30):
+           > 980 and size > 28):
         size -= 2
     tbox_c(d, W // 2, 33, "Tuesday 17 November 2026", fb(SERIF_B, size),
            INK, "header", label="banner")
-    d.line([(16, 69), (1008, 69)], fill=RED, width=3)
+    d.line([(16, 65), (1008, 65)], fill=RED, width=3)
 
     # Region-counts bar, computed from STORIES, each segment in its
     # region colour.
@@ -996,10 +1119,10 @@ def main():
     total += sep_w * (len(segs) - 1)
     sx = (W - total) / 2
     for i, (text, col) in enumerate(segs):
-        tbox(d, sx, 73, text, seg_font, col, "header", label="region-bar")
+        tbox(d, sx, 69, text, seg_font, col, "header", label="region-bar")
         sx += d.textlength(text, font=seg_font)
         if i < len(segs) - 1:
-            tbox(d, sx, 73, " - ", seg_font, GREY, "header", label="sep")
+            tbox(d, sx, 69, " - ", seg_font, GREY, "header", label="sep")
             sx += sep_w
 
     # 1. BY THE NUMBERS strip (Dow red with a down arrow, Nvidia green
@@ -1013,57 +1136,57 @@ def main():
             total_w = tw + 6 + 10
             ax = cx + cell_w / 2 - total_w / 2
             if arrow == "\u25b2":
-                d.polygon([(ax, 85 + 9), (ax + 10, 85 + 9),
-                           (ax + 5, 85 + 1)], fill=col)
+                d.polygon([(ax, 81 + 9), (ax + 10, 81 + 9),
+                           (ax + 5, 81 + 1)], fill=col)
             else:
-                d.polygon([(ax, 85 + 1), (ax + 10, 85 + 1),
-                           (ax + 5, 85 + 9)], fill=col)
-            tbox(d, ax + 16, 85, num, nfont, col, "numbers", label="num")
+                d.polygon([(ax, 81 + 1), (ax + 10, 81 + 1),
+                           (ax + 5, 81 + 9)], fill=col)
+            tbox(d, ax + 16, 81, num, nfont, col, "numbers", label="num")
         else:
-            tbox_c(d, cx + cell_w / 2, 85, num, nfont, col, "numbers",
+            tbox_c(d, cx + cell_w / 2, 81, num, nfont, col, "numbers",
                    label="num")
         font, lines, lh = fit_block(d, label, SANS, 7, 7, cell_w - 12,
                                     2, 16, label=f"number label {i}")
         if len(lines) > 2:
             sys.exit(f"number label {i} needs {len(lines)} lines")
-        ly2 = 102
+        ly2 = 96
         for ln in lines:
             tbox_c(d, cx + cell_w / 2, ly2, ln, font, GREY, "numbers",
                    label="num-label")
             ly2 += lh
         if i:
-            d.line([(cx, 87), (cx, 114)], fill=GREY, width=1)
+            d.line([(cx, 83), (cx, 108)], fill=GREY, width=1)
 
     # 2. WHY THIS DAY MATTERS line (serif; no italic serif on this VM,
     # so regular serif, centred).
-    tbox_c(d, W // 2, 120, WHY_TEXT, fb(SERIF, 10), INK, "header",
+    tbox_c(d, W // 2, 108, WHY_TEXT, fb(SERIF, 10), INK, "header",
            label="why")
 
     # Row 1: three big panels.
     for i in range(3):
-        draw_big_panel(d, 16 + i * 335, 134, 322, 170, CARDS[i])
+        draw_big_panel(img, d, 16 + i * 335, 122, 322, 164, CARDS[i])
 
-    # 3. THE DAY'S THREAD line.
+    # 3. THE DAY'S THREAD line (wider gap above it, point 2).
     label = "THE DAY'S THREAD: "
     lw = d.textlength(label, font=fb(SANS_B, 10))
-    tbox(d, 16, 308, label, fb(SANS_B, 10), RED, "header", label="thread")
-    tbox(d, 16 + lw, 308, THREAD_TEXT, fb(SANS, 10), INK, "header",
+    tbox(d, 16, 294, label, fb(SANS_B, 10), RED, "header", label="thread")
+    tbox(d, 16 + lw, 294, THREAD_TEXT, fb(SANS, 10), INK, "header",
          label="thread-text")
 
     # Row 2: six medium panels.
     for i in range(6):
-        draw_small_panel(d, 16 + i * 165, 322, 158, 152, CARDS[3 + i])
+        draw_small_panel(img, d, 16 + i * 165, 307, 158, 146, CARDS[3 + i])
 
     # Row 3: six small panels.
     for i in range(6):
-        draw_small_panel(d, 16 + i * 165, 478, 158, 164, CARDS[9 + i])
+        draw_small_panel(img, d, 16 + i * 165, 456, 158, 158, CARDS[9 + i])
 
     # Bottom left: world map with numbered pins + region legend.
-    mx, my, mw, mh = 16, 646, 486, 330
+    mx, my, mw, mh = 16, 619, 486, 348
     d.rectangle([mx, my, mx + mw, my + mh], fill=CARD, outline=INK, width=2)
     d.rectangle([mx, my, mx + mw, my + 5], fill=RED)
     section_title(d, mx + 12, my + 12, "WHERE IT HAPPENED")
-    draw_world_map(img, d, mx + 12, my + 32, mw - 24, 280)
+    draw_world_map(img, d, mx + 12, my + 32, mw - 24, 296)
     leg_font = fb(SANS_B, 8)
     leg_w = 0
     for r in REGIONS:
@@ -1071,20 +1194,21 @@ def main():
     leg_w += 8 * (len(REGIONS) - 1)
     lx_leg = mx + mw / 2 - leg_w / 2
     for i, r in enumerate(REGIONS):
-        d.ellipse([lx_leg, my + 315, lx_leg + 6, my + 321],
+        d.ellipse([lx_leg, my + 334, lx_leg + 6, my + 340],
                   fill=REGION_COLORS[r])
-        tbox(d, lx_leg + 10, my + 314, r, leg_font, REGION_COLORS[r],
+        tbox(d, lx_leg + 10, my + 333, r, leg_font, REGION_COLORS[r],
              "map", label="legend")
         lx_leg += 6 + 4 + d.textlength(r, font=leg_font) + 8
 
-    # Bottom right: "Also on" list, grouped by region, ids 16-39.
-    lx, ly, lw, lh = 514, 646, 494, 330
+    # Bottom right: "Also on" list, grouped by region, ids 16-39,
+    # with a gap between region groups (point 5).
+    lx, ly, lw, lh = 514, 619, 494, 348
     d.rectangle([lx, ly, lx + lw, ly + lh], fill=CARD, outline=INK, width=2)
     d.rectangle([lx, ly, lx + lw, ly + 5], fill=RED)
     section_title(d, lx + 12, ly + 12, "ALSO ON TUESDAY 17 NOVEMBER")
     list_top, list_h = ly + 30, lh - 34
     yy = list_top
-    for region, items in ALSO_BY_REGION:
+    for gi, (region, items) in enumerate(ALSO_BY_REGION):
         col = REGION_COLORS[region]
         tbox(d, lx + 12, yy, region, fb(SANS_B, LIST_HEAD_SIZE), col,
              "list", label="head")
@@ -1094,25 +1218,28 @@ def main():
             tbox(d, lx + 24, yy, f"{s['id']}. {s['title']}",
                  fb(SANS, LIST_SIZE), INK, "list", label="row")
             yy += 10
+        if gi < len(ALSO_BY_REGION) - 1:
+            yy += 3
     HEIGHT_LOG.append(("list", yy - list_top, list_h))
 
     # 5. DATE CHECK, one line.
-    d.rectangle([16, 980, 1008, 994], outline=INK, width=2)
-    d.rectangle([16, 980, 22, 994], fill=RED)
-    tbox(d, 30, 983, DATECHECK_TEXT, fb(SANS, 8), INK, "footer",
+    d.rectangle([16, 970, 1008, 982], outline=INK, width=2)
+    d.rectangle([16, 970, 22, 982], fill=RED)
+    tbox(d, 30, 973, DATECHECK_TEXT, fb(SANS, 8), INK, "footer",
          label="datecheck")
 
-    # Footer (with the tag legend on the second line).
-    tbox_c(d, W // 2, 997,
+    # Footer (with the tag legend on the second line), raised and set
+    # at 8 px so both source lines read in full (point 3).
+    tbox_c(d, W // 2, 985,
            "Every story here happened or was first reported on Tuesday "
            "17 November 2026. Contested claims are marked as claims.",
-           fb(SANS, 7), GREY, "footer", label="footer1")
-    tbox_c(d, W // 2, 1004,
+           fb(SANS, 8), GREY, "footer", label="footer1")
+    tbox_c(d, W // 2, 994,
            "Sources: Reuters, AP, PAHO, WHO, UN, Le Monde, CNN, UNB, "
            "UKMTO, NASA. Original drawings. Tags: CONFIRMED = verified "
            "by Reuters / AP / PAHO / WHO / UN; CLAIM = as stated by the "
            "source, not independently verified.",
-           fb(SANS, 7), GREY, "footer", label="footer2")
+           fb(SANS, 8), GREY, "footer", label="footer2")
 
     check_layout()
     img.save(OUT, optimize=True)
